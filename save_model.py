@@ -34,7 +34,7 @@ def build_model(config_input_width, config_input_height, config_input_channel, c
                                                       kernel_size=[3, 3],
                                                       activation_fn=None)
 
-        bn = slim.batch_norm(depthwise_conv)
+        bn = slim.batch_norm(depthwise_conv, center= True, scale=True)
 
         # TODO: test on relu6 or back to lrelu
         act = tf.nn.relu6(bn)
@@ -43,7 +43,7 @@ def build_model(config_input_width, config_input_height, config_input_channel, c
                                             num_pwc_filters,
                                             kernel_size=[1, 1],
                                             activation_fn=None)
-        bn = slim.batch_norm(pointwise_conv)
+        bn = slim.batch_norm(pointwise_conv, center= True, scale=True)
 
         act = tf.nn.relu6(bn)
 
@@ -66,7 +66,7 @@ def build_model(config_input_width, config_input_height, config_input_channel, c
                                  stride=1,
                                  activation_fn=None)
 
-        net = slim.batch_norm(net)
+        net = slim.batch_norm(net, center= True, scale=True)
         net = tf.nn.relu6(net)
 
         net = slim.max_pool2d(net,
@@ -163,7 +163,12 @@ def main():
         # build_node_tree.tree_flatten(fltree, tree)
 
         for var in tf.trainable_variables():
-            print(var.name, var.shape)
+            print('[trainable]', var.name, var.shape)
+
+        for var in tf.all_variables():
+            print('[all]', var.name, var.shape)
+
+
 
         converter = level1_convert.GraphConverter(net)
         converter.convert_all()

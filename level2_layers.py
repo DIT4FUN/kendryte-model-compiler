@@ -49,11 +49,6 @@ class LayerConvolutional(LayerBase):
             return
 
         self.config['batch_normalize'] = 1 if batch_norm is not None else 0
-        if batch_norm is not None:
-            self.batch_normalize_mean = sess.run(batch_norm.op.inputs[1])
-            self.batch_normalize_offset = sess.run(batch_norm.op.inputs[2])
-            self.batch_normalize_a = sess.run(batch_norm.op.inputs[3])
-            self.batch_normalize_b = sess.run(batch_norm.op.inputs[4])
 
         assert (isinstance(conv2d, tf.Tensor))
         self.config['size'] = int(conv2d.op.inputs[1].shape[0])
@@ -63,6 +58,21 @@ class LayerConvolutional(LayerBase):
             self.config['activation'] = activation.op.type
         else:
             self.config['activation'] = 'linear'
+
+        self.weights = sess.run(conv2d.op.inputs[1])
+        self.bias = sess.run(biasadd.op.inputs[1])
+
+        if batch_norm is not None:
+            self.batch_normalize_gamma = sess.run(batch_norm.op.inputs[1])
+            self.batch_normalize_beta = sess.run(batch_norm.op.inputs[2])
+            batch_norm_1 = batch_norm.op.outputs[1]
+            batch_norm_2 = batch_norm.op.outputs[2]
+            batch_normal_outputs = [
+                op for k, op in sess.graph._nodes_by_name.items()
+                if len(op.inputs) == 2 and op.inputs[1] in (batch_norm_1, batch_norm_2)
+            ]
+            self.batch_normalize_moving_mean = sess.run(batch_normal_outputs[0].inputs[0])
+            self.batch_normalize_moving_variance = sess.run(batch_normal_outputs[1].inputs[0])
 
 
 class LayerDepthwiseConvolutional(LayerBase):
