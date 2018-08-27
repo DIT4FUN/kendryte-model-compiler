@@ -66,7 +66,7 @@ def build_model(config_input_width, config_input_height, config_input_channel, c
                                  stride=1,
                                  activation_fn=None)
 
-        net = slim.batch_norm(net, center= True, scale=True)
+        net = slim.batch_norm(net, center=True, scale=True)
         net = tf.nn.relu6(net)
 
         net = slim.max_pool2d(net,
@@ -173,6 +173,8 @@ def main():
         layers = level2_layers.make_layers(sess, converter.dst)
 
         print(level3_gen_file.gen_config_file(layers))
+        weights = level3_gen_file.gen_weights(layers)
+        print(len(weights))
 
     print(net.graph)
 

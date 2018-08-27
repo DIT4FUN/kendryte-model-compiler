@@ -41,7 +41,7 @@ class LayerConvolutional(LayerBase):
         activation = None
         bais_add = None
         if self.type_match(info, ['BiasAdd', 'Conv2D']):
-            biasadd, conv2d = info
+            bais_add, conv2d = info
         elif self.type_match(info, ['Relu', 'BiasAdd', 'Conv2D']):
             activation, bais_add, conv2d = info
         elif self.type_match(info, ['LeakyRelu', 'BiasAdd', 'Conv2D']):
@@ -84,8 +84,8 @@ class LayerConvolutional(LayerBase):
             ]
             mean_tensor = batch_normal_outputs[0].inputs[0]
             variance_tensor = batch_normal_outputs[1].inputs[0]
-            assert('moving_mean/read' in mean_tensor.name)
-            assert('moving_variance/read' in variance_tensor.name)
+            assert ('moving_mean/read' in mean_tensor.name)
+            assert ('moving_variance/read' in variance_tensor.name)
             self.batch_normalize_moving_mean = sess.run(mean_tensor)
             self.batch_normalize_moving_variance = sess.run(variance_tensor)
 
@@ -120,8 +120,8 @@ class LayerDepthwiseConvolutional(LayerBase):
         self.bias = sess.run(bais_add.op.inputs[1])
 
         if batch_norm is not None:
-            self.batch_normalize_mean = sess.run(batch_norm.op.inputs[1])
-            self.batch_normalize_offset = sess.run(batch_norm.op.inputs[2])
+            self.batch_normalize_gamma = sess.run(batch_norm.op.inputs[1])
+            self.batch_normalize_beta = sess.run(batch_norm.op.inputs[2])
             batch_norm_1 = batch_norm.op.outputs[1]
             batch_norm_2 = batch_norm.op.outputs[2]
             batch_normal_outputs = [
@@ -166,3 +166,4 @@ def make_layer(sess, info):
 def make_layers(sess, info_list):
     info_list.reverse()
     return [make_layer(sess, info) for info in info_list]
+
