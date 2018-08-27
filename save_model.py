@@ -162,13 +162,11 @@ def main():
         # fltree = {}
         # build_node_tree.tree_flatten(fltree, tree)
 
-        for var in tf.trainable_variables():
-            print('[trainable]', var.name, var.shape)
-
-        for var in tf.all_variables():
-            print('[all]', var.name, var.shape)
-
-
+        # for var in tf.trainable_variables():
+        #     print('[trainable]', var.name, var.shape)
+        #
+        # for var in tf.all_variables():
+        #     print('[all]', var.name, var.shape)
 
         converter = level1_convert.GraphConverter(net)
         converter.convert_all()
