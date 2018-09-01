@@ -2,3 +2,4 @@ venv
 graphs
 .idea
 __pycache__
+*.graph

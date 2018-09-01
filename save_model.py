@@ -45,7 +45,7 @@ def build_model(config_input_width, config_input_height, config_input_channel, c
                                             activation_fn=None)
         bn = slim.batch_norm(pointwise_conv, center= True, scale=True)
 
-        act = tf.nn.relu6(bn)
+        act = tf.nn.leaky_relu(bn)
 
         return act
 

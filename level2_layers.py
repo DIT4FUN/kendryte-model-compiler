@@ -40,18 +40,29 @@ class LayerConvolutional(LayerBase):
         batch_norm = None
         activation = None
         bais_add = None
+        t_add = None
         if self.type_match(info, ['BiasAdd', 'Conv2D']):
             bais_add, conv2d = info
         elif self.type_match(info, ['Relu', 'BiasAdd', 'Conv2D']):
             activation, bais_add, conv2d = info
         elif self.type_match(info, ['LeakyRelu', 'BiasAdd', 'Conv2D']):
             activation, bais_add, conv2d = info
+        elif self.type_match(info, ['Maximum', 'Mul', 'BiasAdd', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, bais_add, conv2d = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
+        elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, t_add, conv2d = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Relu6', 'BiasAdd', 'Conv2D']):
             activation, bais_add, conv2d = info
         elif self.type_match(info, ['Relu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             activation, batch_norm, bais_add, conv2d = info
-        elif self.type_match(info, ['LeakyRelu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
-            activation, batch_norm, bais_add, conv2d = info
+        elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, batch_norm, bais_add, conv2d = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
+        elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'Add', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, batch_norm, t_add, conv2d = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Relu6', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             activation, batch_norm, bais_add, conv2d = info
         else:
@@ -64,7 +75,10 @@ class LayerConvolutional(LayerBase):
         self.config['size'] = int(conv2d.op.inputs[1].shape[0])
         self.config['stride'] = conv2d.op.get_attr('strides')[1]
         self.config['pad'] = 1 if conv2d.op.get_attr('padding') != 'SAME' else 0
-        if activation is not None:
+
+        if isinstance(activation, list):
+            self.config['activation'] = activation[0]
+        elif activation is not None:
             self.config['activation'] = activation.op.type
         else:
             self.config['activation'] = 'linear'
@@ -72,6 +86,8 @@ class LayerConvolutional(LayerBase):
         self.weights = sess.run(conv2d.op.inputs[1])
         if bais_add is not None:
             self.bias = sess.run(bais_add.op.inputs[1])
+        if t_add is not None:
+            self.bias = sess.run(t_add.op.inputs[1])
 
         if batch_norm is not None:
             self.batch_normalize_gamma = sess.run(batch_norm.op.inputs[1])

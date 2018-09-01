@@ -52,8 +52,11 @@ class GraphConverter:
         elif self.ty_match(['Relu', 'BiasAdd', 'Conv2D']):
             self.dst.append(['convolutional', *self.pop_src(0, 0, 0)])
             return True
-        elif self.ty_match(['LeakyRelu', 'BiasAdd', 'Conv2D']):
-            self.dst.append(['convolutional', *self.pop_src(0, 0, 0)])
+        elif self.ty_match(['Maximum', ['Mul', 1], 'BiasAdd', 'Conv2D']):
+            self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0)])
+            return True
+        elif self.ty_match(['Maximum', ['Mul', 1], 'Add', 'Conv2D']):
+            self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0)])
             return True
         elif self.ty_match(['Relu6', 'BiasAdd', 'Conv2D']):
             self.dst.append(['convolutional', *self.pop_src(0, 0, 0)])
@@ -61,8 +64,11 @@ class GraphConverter:
         elif self.ty_match(['Relu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             self.dst.append(['convolutional', *self.pop_src(0, 0, 0, 0)])
             return True
-        elif self.ty_match(['LeakyRelu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
-            self.dst.append(['convolutional', *self.pop_src(0, 0, 0, 0)])
+        elif self.ty_match(['Maximum', ('Mul', 1), 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
+            self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0, 0)])
+            return True
+        elif self.ty_match(['Maximum', ('Mul', 1), 'FusedBatchNorm', 'Add', 'Conv2D']):
+            self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0, 0)])
             return True
         elif self.ty_match(['Relu6', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             self.dst.append(['convolutional', *self.pop_src(0, 0, 0, 0)])
@@ -112,7 +118,7 @@ class GraphConverter:
             if converter():
                 return True
 
-        if self.src:
+        if self.src is not None:
             print('no converter for', self.src.op.type, 'name:', self.src.op.name)
         else:
             print('convert done.')

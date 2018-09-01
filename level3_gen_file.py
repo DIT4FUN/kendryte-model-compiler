@@ -1,4 +1,3 @@
-import typing
 import level2_layers
 import numpy
 
@@ -16,9 +15,7 @@ def gen_config_file(layers):
 
 
 def gen_weights(layers):
-    ret = []
-
-    ret.append(numpy.array([0, 2, 0, 0], 'int32').tobytes())
+    ret = [numpy.array([0, 2, 0, 0], 'int32').tobytes()]  # header
 
     for layer in layers:
         assert (isinstance(layer, level2_layers.LayerBase))
