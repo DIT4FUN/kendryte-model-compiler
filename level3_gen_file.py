@@ -29,7 +29,9 @@ def gen_weights(layers):
             if str(layer.config['batch_normalize']) != '0':
                 gamma = numpy.array(layer.batch_normalize_gamma, 'float32')
                 beta = numpy.array(layer.batch_normalize_beta, 'float32')
-                bias = numpy.array(layer.batch_normalize_moving_mean, 'float32') - numpy.array(layer.bias, 'float32')
+                bias = numpy.array(layer.batch_normalize_moving_mean, 'float32')
+                if layer.bias is not None:
+                    bias = bias - numpy.array(layer.bias, 'float32')
                 variance = numpy.array(layer.batch_normalize_moving_variance, 'float32')
 
                 ret.append(beta.tobytes())

@@ -21,6 +21,7 @@ class LayerNet(LayerBase):
         super().__init__()
         self.name = 'net'
         self.config = {}
+        self.tensor = info
         if self.type_match(info, ['Placeholder']):
             x, = info
         else:
@@ -37,11 +38,16 @@ class LayerConvolutional(LayerBase):
         super().__init__()
         self.name = 'convolutional'
         self.config = {}
+        self.tensor = info
+        self.bias = None
         batch_norm = None
         activation = None
         bais_add = None
-        t_add = None
-        if self.type_match(info, ['BiasAdd', 'Conv2D']):
+        bn_add, bn_sub, bn_div, bn_mul = None, None, None, None
+
+        if self.type_match(info, ['Add', 'Conv2D']):
+            bais_add, conv2d = info
+        elif self.type_match(info, ['BiasAdd', 'Conv2D']):
             bais_add, conv2d = info
         elif self.type_match(info, ['Relu', 'BiasAdd', 'Conv2D']):
             activation, bais_add, conv2d = info
@@ -50,9 +56,6 @@ class LayerConvolutional(LayerBase):
         elif self.type_match(info, ['Maximum', 'Mul', 'BiasAdd', 'Conv2D']):
             leaky_reul_max, leaky_reul_mul, bais_add, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
-        elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Conv2D']):
-            leaky_reul_max, leaky_reul_mul, t_add, conv2d = info
-            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Relu6', 'BiasAdd', 'Conv2D']):
             activation, bais_add, conv2d = info
         elif self.type_match(info, ['Relu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
@@ -60,9 +63,10 @@ class LayerConvolutional(LayerBase):
         elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             leaky_reul_max, leaky_reul_mul, batch_norm, bais_add, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
-        elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'Add', 'Conv2D']):
-            leaky_reul_max, leaky_reul_mul, batch_norm, t_add, conv2d = info
+        elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Mul', 'RealDiv', 'Sub', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, bn_add, bn_mul, bn_div, bn_sub, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
+            batch_norm = [bn_add, bn_mul, bn_div, bn_sub]
         elif self.type_match(info, ['Relu6', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             activation, batch_norm, bais_add, conv2d = info
         else:
@@ -71,10 +75,15 @@ class LayerConvolutional(LayerBase):
 
         self.config['batch_normalize'] = 1 if batch_norm is not None else 0
 
+        self.tensor_conv_w = conv2d.op.inputs[1]
+        self.tensor_conv_x = conv2d.op.inputs[0]
+        self.tensor_conv_y = conv2d
+
         assert (isinstance(conv2d, tf.Tensor))
         self.config['size'] = int(conv2d.op.inputs[1].shape[0])
         self.config['stride'] = conv2d.op.get_attr('strides')[1]
         self.config['pad'] = 1 if conv2d.op.get_attr('padding') != 'SAME' else 0
+        self.config['filters'] = int(conv2d.shape[3])
 
         if isinstance(activation, list):
             self.config['activation'] = activation[0]
@@ -86,10 +95,13 @@ class LayerConvolutional(LayerBase):
         self.weights = sess.run(conv2d.op.inputs[1])
         if bais_add is not None:
             self.bias = sess.run(bais_add.op.inputs[1])
-        if t_add is not None:
-            self.bias = sess.run(t_add.op.inputs[1])
 
-        if batch_norm is not None:
+        if isinstance(batch_norm, list):
+            self.batch_normalize_moving_mean = sess.run(bn_sub.op.inputs[1])
+            self.batch_normalize_moving_variance = sess.run(bn_div.op.inputs[1])
+            self.batch_normalize_gamma = sess.run(bn_mul.op.inputs[1])
+            self.batch_normalize_beta = sess.run(bn_add.op.inputs[1])
+        elif batch_norm is not None:
             self.batch_normalize_gamma = sess.run(batch_norm.op.inputs[1])
             self.batch_normalize_beta = sess.run(batch_norm.op.inputs[2])
             batch_norm_1 = batch_norm.op.outputs[1]
@@ -111,31 +123,49 @@ class LayerDepthwiseConvolutional(LayerBase):
         super().__init__()
         self.name = 'depthwise_convolutional'
         self.config = {}
+        self.tensor = info
+        bais_add = None
         if self.type_match(info, ['Relu', 'FusedBatchNorm', 'BiasAdd', 'DepthwiseConv2dNative']):
             activation, batch_norm, bais_add, dwconv = info
         elif self.type_match(info, ['Relu6', 'FusedBatchNorm', 'BiasAdd', 'DepthwiseConv2dNative']):
             activation, batch_norm, bais_add, dwconv = info
         elif self.type_match(info, ['LeakyRelu', 'FusedBatchNorm', 'BiasAdd', 'DepthwiseConv2dNative']):
             activation, batch_norm, bais_add, dwconv = info
+        elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Mul', 'RealDiv', 'Sub', 'DepthwiseConv2dNative']):
+            leaky_reul_max, leaky_reul_mul, bn_add, bn_mul, bn_div, bn_sub, dwconv = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
+            batch_norm = [bn_add, bn_mul, bn_div, bn_sub]
         else:
             print('not supported dw_convolutional info.')
             return
 
         self.config['batch_normalize'] = 1 if batch_norm is not None else 0
 
+        self.tensor_conv_w = dwconv.op.inputs[1]
+        self.tensor_conv_x = dwconv.op.inputs[0]
+        self.tensor_conv_y = dwconv
+
         assert (isinstance(dwconv, tf.Tensor))
         self.config['size'] = int(dwconv.op.inputs[1].shape[0])
         self.config['stride'] = dwconv.op.get_attr('strides')[1]
         self.config['pad'] = 1 if dwconv.op.get_attr('padding') != 'SAME' else 0
-        if activation is not None:
+
+        if isinstance(activation, list):
+            self.config['activation'] = activation[0]
+        elif activation is not None:
             self.config['activation'] = activation.op.type
         else:
             self.config['activation'] = 'linear'
 
         self.weights = sess.run(dwconv.op.inputs[1])
-        self.bias = sess.run(bais_add.op.inputs[1])
+        self.bias = sess.run(bais_add.op.inputs[1]) if bais_add else None
 
-        if batch_norm is not None:
+        if isinstance(batch_norm, list):
+            self.batch_normalize_moving_mean = sess.run(bn_sub.op.inputs[1])
+            self.batch_normalize_moving_variance = sess.run(bn_div.op.inputs[1])
+            self.batch_normalize_gamma = sess.run(bn_mul.op.inputs[1])
+            self.batch_normalize_beta = sess.run(bn_add.op.inputs[1])
+        elif batch_norm is not None:
             self.batch_normalize_gamma = sess.run(batch_norm.op.inputs[1])
             self.batch_normalize_beta = sess.run(batch_norm.op.inputs[2])
             batch_norm_1 = batch_norm.op.outputs[1]
@@ -153,6 +183,7 @@ class LayerMaxpool(LayerBase):
         super().__init__()
         self.name = 'maxpool'
         self.config = {}
+        self.tensor = info
         if self.type_match(info, ['MaxPool']):
             max_pool = info[0]
         else:
@@ -182,4 +213,3 @@ def make_layer(sess, info):
 def make_layers(sess, info_list):
     info_list.reverse()
     return [make_layer(sess, info) for info in info_list]
-

@@ -1,18 +1,19 @@
 import tensorflow as tf
+import numpy as np
+from PIL import Image
 
-from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tensorflow.python.platform import gfile
 
 import level1_convert
 import level2_layers
 import level3_gen_file
+import level4_k210
 
 
 def load_graph():
-
     with tf.Session() as persisted_sess:
         print("load graph")
-        with gfile.FastGFile("graph_yv2.graph", 'rb') as f:
+        with gfile.FastGFile("graph_yv2_DW.graph", 'rb') as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
             persisted_sess.graph.as_default()
@@ -32,13 +33,48 @@ def load_graph():
         writer = tf.summary.FileWriter("./graphs", persisted_sess.graph)
         writer.close()
 
-        converter = level1_convert.GraphConverter(persisted_sess.graph._nodes_by_name['leaky_relu_8/Maximum'].outputs[0])
+        return persisted_sess.graph._nodes_by_name['21_yv2_out'].outputs[0]
+
+
+def box_image(im_path, new_w, new_h):
+    orig = Image.open(im_path)
+    w, h = orig.size
+    w_scale = float(new_w) / w
+    h_scale = float(new_h) / h
+
+    n_w = new_w
+    n_h = new_h
+    if w_scale < h_scale:
+        n_h = int(h * w_scale)
+    else:
+        n_w = int(w * h_scale)
+
+    resized = np.array(orig.resize([n_w, n_h]), dtype='float32') / 255.0
+
+    box_im = np.ones([new_h, new_w, 3], dtype='float32') * 0.5
+    fill_y = (new_h - n_h) >> 1
+    fill_x = (new_w - n_w) >> 1
+    box_im[fill_y:fill_y + n_h, fill_x:fill_x + n_w, :] = resized
+
+    return box_im, resized
+
+
+def main():
+    t = load_graph()
+
+    with tf.Session() as sess:
+        converter = level1_convert.GraphConverter(t)
         converter.convert_all()
-        layers = level2_layers.make_layers(persisted_sess, converter.dst)
+        layers = level2_layers.make_layers(sess, converter.dst)
+        dataset = np.array([box_image(path, 320, 320)[0].tolist() for path in
+                   ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')])
+        k210_layers = level4_k210.gen_k210_layers(layers, sess, {'input:0': dataset})
 
-        print(level3_gen_file.gen_config_file(layers))
-        weights = level3_gen_file.gen_weights(layers)
-        print(len(weights))
+        temp = list(it.to_k210(it) for it in k210_layers)
+        # print(level3_gen_file.gen_config_file(layers))
+        # weights = level3_gen_file.gen_weights(layers)
+        # print(len(weights))
+        pass
 
 
-load_graph()
+main()
