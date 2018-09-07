@@ -1,5 +1,20 @@
+import math
+
 import level2_layers
 import numpy as np
+
+
+def log_next_pow_of_2(value):
+    ret = 0
+    while value > 1:
+        value = value / 2
+        ret = ret + 1
+
+    while value < 0.5:
+        value = value * 2
+        ret = ret - 1
+
+    return ret, value
 
 
 class K210Conv:
@@ -9,34 +24,58 @@ class K210Conv:
         self.tensor = layer.tensor
         self.sess = sess
         self.dataset = dataset
+        self.x_range = None
+        self.x_mean = None
+        self.w_range = None
+        self.w_mean = None
 
     def collection(self):
         batch_x = self.sess.run(self.layer.tensor_conv_x, self.dataset)
         ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
         batch_w = self.sess.run(self.layer.tensor_conv_w, self.dataset)
         ordered_w = np.sort(np.reshape(batch_w, [np.product(batch_w.shape)]))
-        batch_y = self.sess.run(self.layer.tensor_conv_y, self.dataset)
-        ordered_y = np.sort(np.reshape(batch_y, [np.product(batch_y.shape)]))
-        pass
+
+        assert (len(ordered_x) > 10)
+        assert (len(ordered_w) > 10)
+        x_min = ordered_x[int(len(ordered_x) * 0.05)]
+        x_max = ordered_x[int(len(ordered_x) * 0.95)]
+        self.x_range = x_max - x_min
+        self.x_mean = (x_min + x_max) / 2
+        assert (self.x_range > 0)
+        w_min = ordered_w[int(len(ordered_w) * 0.05)]
+        w_max = ordered_w[int(len(ordered_w) * 0.95)]
+        self.w_range = w_max - w_min
+        self.w_mean = (w_min + w_max) / 2
+        assert (self.w_range > 0)
+
+    @staticmethod
+    def q(value, ranges, mean):
+        return (value - mean) / ranges
+
+    @staticmethod
+    def q_reverse(qvalue, ranges, mean):
+        return qvalue * ranges + mean
 
     def to_k210(self):
         self.collection()
-        weight = self.layer.weights
+        weight_shape = self.layer.weights.shape[1:]
+        weight_row_length = np.product(weight_shape[:-1])
+        weight_length = np.product(weight_shape) * 2  # 16 bit
+        weight_buffer_size = 144 * 1024  # 144k
+        weight_q = self.q(self.layer.weights, self.w_range, self.w_mean)
 
         depth_wise_layer = 1 if self.depth_wise_layer else 0
-        kernel_type = {1: 0, 3: 1}[int(self.tensor.shape[1])]
-        pad_type = 0  # todo: check what for pad
+        kernel_type = {1: 0, 3: 1}[int(self.layer.tensor_conv_w.shape[1])]
+        pad_type = 0
         bypass_conv = 0
-        pad_value = 0
+        pad_value = int(self.q_reverse(0, self.x_range, self.x_mean) * 256)
         load_coor = 1
-        # load_time
-        # para_size
-        # para_start_addr
-        # shr_w
-        # shr_x
-        # arg_w
-        # arg_x
-        # arg_add
+        load_time = math.ceil(weight_length / weight_buffer_size)
+        para_size = weight_buffer_size if kernel_type == 1 else weight_buffer_size * 9 / 8
+        para_start_addr = weight_q
+        shr_w, arg_w = log_next_pow_of_2(self.w_range)
+        shr_x, arg_x = log_next_pow_of_2(self.x_range)
+        arg_add = self.x_mean * self.w_mean + self.w_mean * self.x_mean / self.x_range
 
         return locals()
 
@@ -49,7 +88,16 @@ class K210BN:
         self.beta = beta
 
     def to_k210(self):
-        pass
+        scale = self.gamma / self.var
+        additional = self.beta - self.gamma * self.mean / self.var
+        shr_bn, arg_bn = log_next_pow_of_2(scale)
+
+        load_para = 1
+        bwsx_base_addr = [
+            shr_bn, arg_bn, additional
+        ]
+
+        return locals()
 
 
 class K210Act:
@@ -57,7 +105,7 @@ class K210Act:
         self.name = name
 
     def to_k210(self):
-        pass
+        return {'name': self.name}
 
 
 class K210Pool:
@@ -67,7 +115,13 @@ class K210Pool:
         self.stride = stride
 
     def to_k210(self):
-        pass
+        if self.name == 'maxpool':
+            return {'pool_type': {
+                (2, 2): 1,
+                (2, 1): 9
+            }[(self.size, self.stride)]}
+        else:
+            return None
 
 
 class K210Layer:
@@ -80,6 +134,31 @@ class K210Layer:
         self.pool = None
 
     def to_k210(self):
+        input_shape = self.conv.layer.tensor_conv_x.shape
+        output_shape = self.conv.layer.tensor_conv_y.shape
+
+
+        int_en = 1
+        image_src_addr = None
+        image_dst_addr = None
+        i_ch_num = int(self.conv.layer.tensor_conv_w.shape[2])
+        o_ch_num = int(self.conv.layer.tensor_conv_w.shape[3])
+        o_ch_num_coef
+        i_row_wid = int(input_shape[1])
+        i_col_high = int(input_shape[2])
+        o_row_wid = int(output_shape[1])
+        o_col_high = int(output_shape[2])
+        first_stride
+        dma_burst_size
+        channel_switch_addr = int(input_shape[2]*input_shape[1]/64)
+        row_switch_addr = int(input_shape[1]/64)
+        coef_group
+        wb_channel_switch_addr = int(output_shape[2]*output_shape[1]/64)
+        wb_row_switch_addr = int(output_shape[1]/64)
+        wb_group
+        send_data_out
+        channel_byte_num = int(output_shape[1]*output_shape[2])
+        dma_total_byte = int(output_shape[1]*output_shape[2]*output_shape[3])
         return self.conv and self.conv.to_k210()
 
 
