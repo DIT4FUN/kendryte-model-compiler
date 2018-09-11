@@ -23,7 +23,7 @@ full_add = sum results for each output channel
 [io] first_stride = set 1 if cannot fit column
 [cv] bypass_conv
 [bn] load_para = load BN weihts
-[io] dma_burst_size
+[io] dma_burst_size = 0xf
 [cv] pad_value
 [bn] bwsx_base_addr = [BN addr]
 

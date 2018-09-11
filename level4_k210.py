@@ -89,12 +89,12 @@ class K210BN:
 
     def to_k210(self):
         scale = self.gamma / self.var
-        additional = self.beta - self.gamma * self.mean / self.var
-        shr_bn, arg_bn = log_next_pow_of_2(scale)
+        norm_add = self.beta - self.gamma * self.mean / self.var
+        norm_shift, norm_mul = log_next_pow_of_2(scale)
 
         load_para = 1
         bwsx_base_addr = [
-            shr_bn, arg_bn, additional
+            norm_mul, norm_add, norm_shift
         ]
 
         return locals()
