@@ -19,8 +19,8 @@ full_add = sum results for each output channel
 
 [cv] kernel_type
 [cv] pad_type
-[po] pool_type
-[io] first_stride = set 1 if cannot fit column
+[po] pool_type = bypass if first_stride is 1
+[io] first_stride = set 1 to only use 0,2,4... index (of row and colum) for input 
 [cv] bypass_conv
 [bn] load_para = load BN weihts
 [io] dma_burst_size = 0xf
