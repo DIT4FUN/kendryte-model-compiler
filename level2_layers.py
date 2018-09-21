@@ -184,6 +184,7 @@ class LayerMaxpool(LayerBase):
         self.name = 'maxpool'
         self.config = {}
         self.tensor = info
+        self.tensor_pool = info[0]
         if self.type_match(info, ['MaxPool']):
             max_pool = info[0]
         else:

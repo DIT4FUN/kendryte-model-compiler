@@ -6,7 +6,7 @@ import numpy as np
 
 def log_next_pow_of_2(value):
     ret = 0
-    while value > 1:
+    while value > 1 or value <= -1:
         value = value / 2
         ret = ret + 1
 
@@ -15,10 +15,6 @@ def log_next_pow_of_2(value):
     #     ret = ret - 1
 
     return ret, value
-
-
-def log_next_pow_of_2_list(value_list):
-    return [log_next_pow_of_2(value) for value in value_list]
 
 
 class K210Conv:
@@ -34,6 +30,10 @@ class K210Conv:
         self.w_mean = None
         self.output_shape = self.layer.tensor_conv_y.shape
 
+    @staticmethod
+    def q(value, ranges, mean):
+        return (value - mean) / ranges
+
     def collection(self):
         batch_x = self.sess.run(self.layer.tensor_conv_x, self.dataset)
         ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
@@ -42,24 +42,21 @@ class K210Conv:
 
         assert (len(ordered_x) > 10)
         assert (len(ordered_w) > 10)
-        x_min = ordered_x[int(len(ordered_x) * 0.05)]
-        x_max = ordered_x[int(len(ordered_x) * 0.95)]
+        # x_min = ordered_x[int(len(ordered_x) * 0.05)]
+        # x_max = ordered_x[int(len(ordered_x) * 0.95)]
+        x_min = ordered_x[0]  # TODO: fix do not use max-min value
+        x_max = ordered_x[-1]
+
         self.x_range = x_max - x_min
-        self.x_mean = (x_min + x_max) / 2
+        self.x_mean = x_min
         assert (self.x_range > 0)
-        w_min = ordered_w[int(len(ordered_w) * 0.05)]
-        w_max = ordered_w[int(len(ordered_w) * 0.95)]
+        # w_min = ordered_w[int(len(ordered_w) * 0.05)]
+        # w_max = ordered_w[int(len(ordered_w) * 0.95)]
+        w_min = ordered_w[0]
+        w_max = ordered_w[-1]
         self.w_range = w_max - w_min
-        self.w_mean = (w_min + w_max) / 2
+        self.w_mean = w_min
         assert (self.w_range > 0)
-
-    @staticmethod
-    def q(value, ranges, mean):
-        return (value - mean) / ranges
-
-    @staticmethod
-    def q_reverse(qvalue, ranges, mean):
-        return qvalue * ranges + mean
 
     @staticmethod
     def weights_fill_buffer_33(weights, buf_size):
@@ -99,14 +96,13 @@ class K210Conv:
         n = math.floor(buf_size / o_ch_weights_size)
         return K210Layer.batch(weights_o_ch_list, n)
 
-    def to_k210(self):
+    def to_k210(self, idx):
         self.collection()
-        weight_shape = self.layer.weights.shape[1:]
-        weight_buffer_size = 2*9*4096
+        weight_buffer_size = 2 * 9 * 4096
         weight_q = self.q(self.layer.weights, self.w_range, self.w_mean)
+        weights = self.layer.weights
 
         input_shape = self.layer.tensor_conv_x.shape
-        output_shape = self.layer.tensor_conv_y.shape
         weights_shape = self.layer.tensor_conv_w.shape
         img_data_size = 1
         weight_data_size = 2
@@ -115,11 +111,11 @@ class K210Conv:
         weight_cache_row_size = 9 * 2
         weight_cache_mem_size = weight_cache_row_size * 64
 
-        input_row_size = int(input_shape[1]) * img_data_size
-        input_channel_size = int(input_shape[2]) * input_row_size
+        input_row_size = int(input_shape[2]) * img_data_size
+        input_channel_size = int(input_shape[1]) * input_row_size
         input_all_size = int(input_shape[3]) * input_channel_size
-        output_row_size = int(input_shape[1]) * img_data_size
-        output_channel_size = int(input_shape[2]) * output_row_size
+        output_row_size = int(input_shape[2]) * img_data_size
+        output_channel_size = int(input_shape[1]) * output_row_size
         output_all_size = int(input_shape[3]) * output_channel_size
         kernel_size = int(weights_shape[0])
         weight_kernel_size = kernel_size * kernel_size * weight_data_size
@@ -132,42 +128,42 @@ class K210Conv:
 
         weight_all_size = weight_single_output_size * int(weights_shape[3])
 
-        buf_size = 4096 * 3 * 3 * weight_data_size
-        o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
-
         # exports:
-        # weights
-        i_ch_num = int(weights_shape[2])
-        o_ch_num = int(weights_shape[3])
-        o_ch_num_coef = min(math.floor(buf_size / o_ch_weights_size), int(output_shape[3]))
+        bypass_conv = 0
         # img i
-        i_row_wid = int(input_shape[1])
-        i_col_high = int(input_shape[2])
+        i_row_wid = int(input_shape[2])
+        i_col_high = int(input_shape[1])
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
-        row_switch_addr = img_line_size * coef_group / 64
-        channel_switch_addr = math.ceil(img_data_size * i_row_wid / img_line_size)
-        # img o
-        o_row_wid = int(output_shape[1])
-        o_col_high = int(output_shape[2])
-        wb_group = 1 if o_row_wid > 32 else (2 if o_row_wid > 16 else 4)
-        wb_channel_switch_addr = img_line_size * coef_group
-        wb_row_switch_addr = math.ceil(img_data_size * o_row_wid / img_line_size)
-        channel_byte_num = wb_row_switch_addr * int(output_shape[3])
+        row_switch_addr = math.ceil(i_row_wid / coef_group / 64)
+        channel_switch_addr = math.ceil(row_switch_addr * 64 * i_col_high / coef_group / 64)
         # conv
         depth_wise_layer = 1 if self.depth_wise_layer else 0
-        kernel_type = {1: 0, 3: 1}[int(self.layer.tensor_conv_w.shape[1])]
+        kernel_type = {1: 0, 3: 1}[kernel_size]
         pad_type = 0
-        bypass_conv = 0
-        pad_value = int(self.q_reverse(0, self.x_range, self.x_mean) * 256)
         load_coor = 1
         load_time = math.ceil(weight_all_size / weight_buffer_size)
-        para_size = min(math.floor(weight_buffer_size / weight_single_output_size) * weight_single_output_size, weight_all_size)
+        para_size = min(math.floor(weight_buffer_size / weight_single_output_size) * weight_single_output_size,
+                        weight_all_size)
         para_start_addr = weight_q
-        shr_w, arg_w = log_next_pow_of_2(self.w_range)
-        shr_x, arg_x = log_next_pow_of_2(self.x_range)
-        arg_add = self.x_mean * self.w_mean + self.w_mean * self.x_mean / self.x_range
-        first_stride = self.layer.config['stride']
-        assert (256 > i_col_high if first_stride == 0 else i_col_high / 2)
+        first_stride = 0 if self.layer.config['stride'] == 1 else 1
+        assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
+
+        if idx == 0:
+            bais_x, scale_x = (0, 256)
+        else:
+            bais_x, scale_x = (self.x_mean, self.x_range)
+
+        bais_w, scale_w = self.w_mean, self.w_range
+        bx_div_sx = bais_x / scale_x
+        bw_div_sw = bais_w / scale_w
+
+        magic_hot_fix = 1<<7
+
+        shr_x, arg_x = log_next_pow_of_2(bw_div_sw*magic_hot_fix)
+        shr_w, arg_w = log_next_pow_of_2(bx_div_sx*magic_hot_fix)
+        arg_add = kernel_size * kernel_size * bw_div_sw * bx_div_sx
+        pad_value = -bx_div_sx
+        extra_scale = scale_w * scale_x
 
         return locals()
 
@@ -179,14 +175,22 @@ class K210BN:
         self.gamma = gamma
         self.beta = beta
 
-    def to_k210(self):
-        scale = self.gamma / self.var
-        norm_add = self.beta - self.gamma * self.mean / self.var
+    @staticmethod
+    def get_bn(scale, bias):
+        norm_shift, norm_mul = log_next_pow_of_2(scale)
+        return {'norm_mul': hex(int(norm_mul*(1<<16))), 'norm_add': bias, 'norm_shift': norm_shift}
 
+    def to_k210(self, extra_scale=1):
+        __tmp_hotfix_magic =  100000000.0 / 3
+        __tmp_hotfix_magic_sxsw_base = 1<<32
+        scale = extra_scale * self.gamma / self.var * __tmp_hotfix_magic / __tmp_hotfix_magic_sxsw_base
+        bias = (self.beta - self.gamma * self.mean / self.var) * __tmp_hotfix_magic
+
+        # print('gamma', self.gamma, 'beta', self.beta, 'mean',self.mean, 'sigma', self.var, 'scale', scale, 'bias', bias)
         load_para = 1
         bwsx_base_addr = [
-            {'norm_mul': norm_mul, 'norm_add': norm_add, 'norm_shift': norm_shift}
-            for norm_shift, norm_mul in log_next_pow_of_2_list(scale)
+            self.get_bn(s,b)
+            for s,b in zip(scale.tolist(), bias.tolist())
         ]
 
         return locals()
@@ -201,10 +205,11 @@ class K210Act:
 
 
 class K210Pool:
-    def __init__(self, name, size, stride):
+    def __init__(self, layer, name, size, stride):
         self.name = name
         self.size = size
         self.stride = stride
+        self.tensor = layer.tensor_pool
 
     def to_k210(self):
         if self.name == 'maxpool':
@@ -230,6 +235,33 @@ class K210Layer:
             yield iter[ndx:min(ndx + n, l)]
 
     def to_k210(self):
+        if self.pool is not None:
+            output_shape = self.pool.tensor.shape
+        else:
+            output_shape = self.conv.layer.tensor_conv_y.shape
+
+        weights_shape = self.conv.layer.tensor_conv_w.shape
+        input_shape = self.conv.layer.tensor_conv_x.shape
+        i_row_wid = int(input_shape[1])
+        weight_data_size = 2
+        img_data_size = 1
+        img_line_size = 64
+        buf_size = 4096 * 3 * 3 * weight_data_size
+        o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
+        coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
+
+        # io
+        i_ch_num = int(weights_shape[2])
+        o_ch_num = int(output_shape[3])
+        o_ch_num_coef = min(math.floor(buf_size / o_ch_weights_size), int(output_shape[3]))
+        # img o
+        o_row_wid = int(output_shape[2])
+        o_col_high = int(output_shape[1])
+        wb_group = 1 if o_row_wid > 32 else (2 if o_row_wid > 16 else 4)
+        wb_row_switch_addr = math.ceil(o_row_wid / wb_group / 64)
+        wb_channel_switch_addr = math.ceil(wb_row_switch_addr * 64 * o_col_high / wb_group / 64)
+        channel_byte_num = wb_channel_switch_addr * int(output_shape[3])
+
         int_en = 0
         image_src_addr = None
         image_dst_addr = None
@@ -264,12 +296,16 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
                     conv_layer.batch_normalize_gamma,
                     conv_layer.batch_normalize_beta
                 )
+            else:
+                bias_shape = conv_layer.bias.shape
+                cur_k210.bn = K210BN(0, 1, np.ones(bias_shape), conv_layer.bias)
+
             cur_k210.act = K210Act(conv_layer.config['activation'])
 
         if len(buffer) > 0 and isinstance(buffer[-1], level2_layers.LayerMaxpool):
             pool_layer = buffer.pop()
             assert (isinstance(pool_layer, level2_layers.LayerMaxpool))
-            cur_k210.pool = K210Pool('maxpool', pool_layer.config['size'], pool_layer.config['stride'])
+            cur_k210.pool = K210Pool(pool_layer, 'maxpool', pool_layer.config['size'], pool_layer.config['stride'])
 
         ret.append(cur_k210)
 
