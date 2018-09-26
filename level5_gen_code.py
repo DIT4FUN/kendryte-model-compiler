@@ -11,7 +11,6 @@ default_pool_arg = {
 }
 
 
-
 #
 # def q_reverse(qvalue, ranges, mean):
 #     return qvalue * ranges + mean
@@ -22,15 +21,17 @@ default_pool_arg = {
 #         shr_w, arg_w = log_next_pow_of_2(w_range)
 #         shr_x, arg_x = log_next_pow_of_2(x_range)
 
+def signed_to_hex(value, width):
+    return hex(int((1<<width) + value) % (1<<width))
 
-def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
+def gen_layer_struct(klayer: level4_k210.K210Layer, last_layer, idx: int):
     todo = None
     reserved = 0
     set_to_zero = 0
 
-    conv_arg = klayer.conv and klayer.conv.to_k210(idx) or default_conv_arg
+    conv_arg = klayer.conv and klayer.conv.to_k210(idx, last_layer) or default_conv_arg
     act_arg = klayer.act and klayer.act.to_k210() or default_act_arg
-    bn_arg = klayer.bn and klayer.bn.to_k210(conv_arg['extra_scale']) or default_bn_arg
+    bn_arg = klayer.bn and klayer.bn.to_k210(conv_arg['swsx']) or default_bn_arg
     pool_arg = klayer.pool and klayer.pool.to_k210() or default_pool_arg
     io_arg = klayer.to_k210()
 
@@ -70,7 +71,7 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
         'load_coor': conv_arg['load_coor'],
         'load_time': conv_arg['load_time'] - 1,
         'para_size': conv_arg['para_size'],
-        'para_start_addr': None,
+        'para_start_addr': conv_arg['para_start_addr'],
     }
     kernel_offset = {
         'coef_column_offset': set_to_zero,
@@ -82,7 +83,7 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
         'coef_size': reserved,
         'coef_group': conv_arg['coef_group'],
         'load_act': 1 if klayer.act else 0,
-        'active_addr': act_arg['name']  # todo
+        'active_addr': act_arg['active_addr']
     }
     write_back_cfg = {
         'wb_channel_switch_addr': io_arg['wb_channel_switch_addr'],
@@ -92,11 +93,11 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     conv_value = {
         'shr_w': conv_arg['shr_w'],
         'shr_x': conv_arg['shr_x'],
-        'arg_w': hex(int(0x1000000+(conv_arg['arg_w']*(1<<23)))%0x1000000),
-        'arg_x': hex(int(0x1000000+(conv_arg['arg_x']*(1<<23)))%0x1000000),
+        'arg_w': signed_to_hex(conv_arg['arg_w'], 24),
+        'arg_x': signed_to_hex(conv_arg['arg_x'], 24),
     }
     conv_value2 = {
-        'arg_add': int(round((1<<40)*conv_arg['arg_add'])),
+        'arg_add': int(round(conv_arg['arg_add'])),
     }
     dma_parameter = {
         'send_data_out': io_arg['send_data_out'],
@@ -121,30 +122,50 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     }
 
 
-
-
 def gen_layer_list_struct(klayers: [level4_k210.K210Layer]):
     ret = [
-        gen_layer_struct(klayer, idx)
+        gen_layer_struct(klayer, idx, (klayers[idx - 1] if idx > 0 else None))
         for klayer, idx in zip(klayers, range(len(klayers)))
     ]
     return ret
 
-def gen_layer_code(dlayer):
+
+def gen_layer_code(dlayer, idx):
     return ('{\n' +
             ',\n'.join([
                 ' .' + reg_name + '.data = {\n' +
                 ',\n'.join([
-                    '  .' + str(k) + ' = ' + str(v)
-                    for k, v in data.items() if str(k) not in ('todo',)
+                    '  .' + str(k) + ' = ' + (
+                        str(v)
+                        if str(k) not in ('bwsx_base_addr', 'para_start_addr', 'active_addr')
+                        else str(k) + '_' + str(idx)
+                    )
+                    for k, v in data.items()
                 ]) + '\n }'
                 for reg_name, data in dlayer.items()
             ]) +
             '\n}')
 
+def gen_bn_code(dlayer, idx):
+    bn_list = dlayer['kernel_pool_type_cfg']['bwsx_base_addr']
+    bn_code_list = [('{.batchnorm.data = {\n' +
+            '  .norm_mul = '+str(bn['norm_mul'])+',\n'+
+            '  .norm_add = '+str(bn['norm_add'])+',\n'+
+            '  .norm_shift = '+str(bn['norm_shift'])+'\n'+
+            '}}') for bn in bn_list]
+    return 'cnn_batchnorm_argument_t bwsx_base_addr_'+str(idx)+'[] = {\n'+',\n'.join(bn_code_list) + '\n};'
+
 
 def gen_layer_list_code(klayers: [level4_k210.K210Layer]):
-    return [
-        gen_layer_code(layer)
-        for layer in gen_layer_list_struct(klayers)
+    structs = gen_layer_list_struct(klayers)
+
+    layer_part = 'cnn_layer_argument_t la[] = {'+',\n'.join([
+        gen_layer_code(layer, idx)
+        for layer, idx in zip(structs, range(len(structs)))
+    ])+'};'
+
+    bn_part = [
+        gen_bn_code(layer, idx)
+        for layer, idx in zip(structs, range(len(structs)))
     ]
+    return layer_part + '\n\n' + '\n'.join(bn_part)

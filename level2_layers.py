@@ -78,6 +78,7 @@ class LayerConvolutional(LayerBase):
         self.tensor_conv_w = conv2d.op.inputs[1]
         self.tensor_conv_x = conv2d.op.inputs[0]
         self.tensor_conv_y = conv2d
+        self.tensor_activation = activation or batch_norm or bais_add
 
         assert (isinstance(conv2d, tf.Tensor))
         self.config['size'] = int(conv2d.op.inputs[1].shape[0])
@@ -87,6 +88,7 @@ class LayerConvolutional(LayerBase):
 
         if isinstance(activation, list):
             self.config['activation'] = activation[0]
+            self.tensor_activation = activation[1]
         elif activation is not None:
             self.config['activation'] = activation.op.type
         else:
@@ -144,6 +146,7 @@ class LayerDepthwiseConvolutional(LayerBase):
         self.tensor_conv_w = dwconv.op.inputs[1]
         self.tensor_conv_x = dwconv.op.inputs[0]
         self.tensor_conv_y = dwconv
+        self.tensor_activation = activation or batch_norm or bais_add
 
         assert (isinstance(dwconv, tf.Tensor))
         self.config['size'] = int(dwconv.op.inputs[1].shape[0])
@@ -152,6 +155,7 @@ class LayerDepthwiseConvolutional(LayerBase):
 
         if isinstance(activation, list):
             self.config['activation'] = activation[0]
+            self.tensor_activation = activation[1]
         elif activation is not None:
             self.config['activation'] = activation.op.type
         else:

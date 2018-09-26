@@ -10,11 +10,20 @@ def log_next_pow_of_2(value):
         value = value / 2
         ret = ret + 1
 
-    # while value < 0.5:
-    #     value = value * 2
-    #     ret = ret - 1
+    return ret, value
+
+
+def pow_next_log_of_2(value, bound_shift):
+    ret = 0
+    while value >= -(1 << (bound_shift - 2)) and value < (1 << (bound_shift - 2)) and value != 0:
+        value = value * 2
+        ret = ret + 1
 
     return ret, value
+
+
+def signed_to_hex(value, width):
+    return hex(int((1 << width) + value) % (1 << width))
 
 
 class K210Conv:
@@ -25,7 +34,7 @@ class K210Conv:
         self.sess = sess
         self.dataset = dataset
         self.x_range = None
-        self.x_mean = None
+        self.x_bias = None
         self.w_range = None
         self.w_mean = None
         self.output_shape = self.layer.tensor_conv_y.shape
@@ -48,7 +57,7 @@ class K210Conv:
         x_max = ordered_x[-1]
 
         self.x_range = x_max - x_min
-        self.x_mean = x_min
+        self.x_bias = x_min
         assert (self.x_range > 0)
         # w_min = ordered_w[int(len(ordered_w) * 0.05)]
         # w_max = ordered_w[int(len(ordered_w) * 0.95)]
@@ -58,48 +67,48 @@ class K210Conv:
         self.w_mean = w_min
         assert (self.w_range > 0)
 
-    @staticmethod
-    def weights_fill_buffer_33(weights, buf_size):
-        reorder = [[[[weights[w][h][i_ch][o_ch]
-                      for w in range(int(weights.shape[0]))]
-                     for h in range(int(weights.shape[1]))]
-                    for i_ch in range(int(weights.shape[2]))]
-                   for o_ch in range(int(weights.shape[3]))]
+    # @staticmethod
+    # def weights_fill_buffer_33(weights, buf_size):
+    #     reorder = [[[[weights[w][h][i_ch][o_ch]
+    #                   for w in range(int(weights.shape[0]))]
+    #                  for h in range(int(weights.shape[1]))]
+    #                 for i_ch in range(int(weights.shape[2]))]
+    #                for o_ch in range(int(weights.shape[3]))]
+    #
+    #     weights_o_ch_list = [
+    #         np.array(o_ch_weights).flatten()
+    #         for o_ch_weights in reorder
+    #     ]
+    #
+    #     weights_shape = weights.shape
+    #     weight_size = 2
+    #     o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_size
+    #     n = math.floor(buf_size / o_ch_weights_size)
+    #     return K210Layer.batch(weights_o_ch_list, n)
+    #
+    # @staticmethod
+    # def weights_fill_buffer_11(weights, buf_size):
+    #     reorder = [[[[weights[w][h][i_ch][o_ch]
+    #                   for w in range(int(weights.shape[0]))]
+    #                  for h in range(int(weights.shape[1]))]
+    #                 for i_ch in range(int(weights.shape[2]))]
+    #                for o_ch in range(int(weights.shape[3]))]
+    #
+    #     weights_o_ch_list = [
+    #         [[*batch, None] for batch in K210Layer.batch(np.array(o_ch_weights).flatten(), 8)]
+    #         for o_ch_weights in reorder
+    #     ]
+    #
+    #     weights_shape = weights.shape
+    #     weight_size = 2
+    #     o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_size
+    #     n = math.floor(buf_size / o_ch_weights_size)
+    #     return K210Layer.batch(weights_o_ch_list, n)
 
-        weights_o_ch_list = [
-            np.array(o_ch_weights).flatten()
-            for o_ch_weights in reorder
-        ]
-
-        weights_shape = weights.shape
-        weight_size = 2
-        o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_size
-        n = math.floor(buf_size / o_ch_weights_size)
-        return K210Layer.batch(weights_o_ch_list, n)
-
-    @staticmethod
-    def weights_fill_buffer_11(weights, buf_size):
-        reorder = [[[[weights[w][h][i_ch][o_ch]
-                      for w in range(int(weights.shape[0]))]
-                     for h in range(int(weights.shape[1]))]
-                    for i_ch in range(int(weights.shape[2]))]
-                   for o_ch in range(int(weights.shape[3]))]
-
-        weights_o_ch_list = [
-            [[*batch, None] for batch in K210Layer.batch(np.array(o_ch_weights).flatten(), 8)]
-            for o_ch_weights in reorder
-        ]
-
-        weights_shape = weights.shape
-        weight_size = 2
-        o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_size
-        n = math.floor(buf_size / o_ch_weights_size)
-        return K210Layer.batch(weights_o_ch_list, n)
-
-    def to_k210(self, idx):
+    def to_k210(self, idx, last_layer):
         self.collection()
         weight_buffer_size = 2 * 9 * 4096
-        weight_q = self.q(self.layer.weights, self.w_range, self.w_mean)
+        weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65536
         weights = self.layer.weights
 
         input_shape = self.layer.tensor_conv_x.shape
@@ -144,26 +153,24 @@ class K210Conv:
         load_time = math.ceil(weight_all_size / weight_buffer_size)
         para_size = min(math.floor(weight_buffer_size / weight_single_output_size) * weight_single_output_size,
                         weight_all_size)
-        para_start_addr = weight_q
+        para_start_addr = [round(item) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
 
         if idx == 0:
-            bais_x, scale_x = (0, 256)
+            bais_x, scale_x = (0, 1 / 256)
         else:
-            bais_x, scale_x = (self.x_mean, self.x_range)
+            bais_x, scale_x = (self.x_bias, self.x_range / 256)
 
-        bais_w, scale_w = self.w_mean, self.w_range
+        bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
         bx_div_sx = bais_x / scale_x
         bw_div_sw = bais_w / scale_w
 
-        magic_hot_fix = 1<<7
-
-        shr_x, arg_x = log_next_pow_of_2(bw_div_sw*magic_hot_fix)
-        shr_w, arg_w = log_next_pow_of_2(bx_div_sx*magic_hot_fix)
+        shr_x, arg_x = pow_next_log_of_2(bw_div_sw, 24)
+        shr_w, arg_w = pow_next_log_of_2(bx_div_sx, 24)
         arg_add = kernel_size * kernel_size * bw_div_sw * bx_div_sx
         pad_value = -bx_div_sx
-        extra_scale = scale_w * scale_x
+        swsx = scale_w * scale_x
 
         return locals()
 
@@ -177,31 +184,101 @@ class K210BN:
 
     @staticmethod
     def get_bn(scale, bias):
-        norm_shift, norm_mul = log_next_pow_of_2(scale)
-        return {'norm_mul': hex(int(norm_mul*(1<<16))), 'norm_add': bias, 'norm_shift': norm_shift}
+        norm_shift, norm_mul = pow_next_log_of_2(scale, 24)
+        return {'norm_mul': signed_to_hex(norm_mul, 24), 'norm_add': signed_to_hex(bias, 32), 'norm_shift': norm_shift}
 
-    def to_k210(self, extra_scale=1):
-        __tmp_hotfix_magic =  100000000.0 / 3
-        __tmp_hotfix_magic_sxsw_base = 1<<32
-        scale = extra_scale * self.gamma / self.var * __tmp_hotfix_magic / __tmp_hotfix_magic_sxsw_base
+    def to_k210(self, swsx=1):
+        __tmp_hotfix_magic = 100000000.0 / 3
+        scale = swsx * self.gamma / self.var * __tmp_hotfix_magic
         bias = (self.beta - self.gamma * self.mean / self.var) * __tmp_hotfix_magic
 
         # print('gamma', self.gamma, 'beta', self.beta, 'mean',self.mean, 'sigma', self.var, 'scale', scale, 'bias', bias)
         load_para = 1
         bwsx_base_addr = [
-            self.get_bn(s,b)
-            for s,b in zip(scale.tolist(), bias.tolist())
+            self.get_bn(s, b)
+            for s, b in zip(scale.tolist(), bias.tolist())
         ]
 
         return locals()
 
 
 class K210Act:
-    def __init__(self, name):
+    def __init__(self, layer, sess, dataset, name):
+        self.layer = layer
+        self.sess = sess
+        self.dataset = dataset
         self.name = name
+        self.min_y = None
+        self.max_y = None
+
+    @staticmethod
+    def leaky_relu(x):
+        return x if x >= 0 else 0.1 * x
+
+    @staticmethod
+    def leaky_relu_inverse(y):
+        return y if y >= 0 else 10 * y
+
+    @staticmethod
+    def leaky_table(min_y, max_y):
+        range_y = max_y - min_y
+        y_table = [min_y + i * range_y / 15 for i in range(15)]
+        y_table.append(0)
+        y_table.append(max_y)
+        y_table = sorted(y_table)
+        x_table = [K210Act.leaky_relu_inverse(it) for it in y_table]
+        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(16)]
+        return zip(x_table, y_table, dydx)
+
+    @staticmethod
+    def linear_table(min_y, max_y):
+        range_y = max_y - min_y
+        y_table = [min_y + i * range_y / 15 for i in range(15)]
+        y_table.append(0)
+        y_table.append(max_y)
+        y_table = sorted(y_table)
+        return zip(y_table, y_table, [1] * len(y_table))
+
+    @staticmethod
+    def find_shift(dydx):
+        assert (dydx > 0)
+        ret_shift = 0
+        while (dydx < (1 << 14)):
+            dydx = dydx * 2
+            ret_shift = ret_shift + 1
+        return ret_shift, dydx
+
+    @staticmethod
+    def table_to_act(act_table):
+        __tmp_hotfix_magic = 100000000.0 / 3
+        act_table = [(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
+        min_y = act_table[0][1]
+        max_y = act_table[-1][1]
+        scale = 256 / (max_y - min_y)
+        bias = -min_y * scale
+
+        def ret_aux(x, y, dydx):
+            dxs, dy = K210Act.find_shift(dydx)
+            return {'x': round(x), 'y': math.floor(y * scale + bias), 'dxs': dxs, 'dy': round(dy)}
+
+        return [ret_aux(x, y, dydx) for x, y, dydx in act_table]
+
+    def collection(self):
+        batch_y = self.sess.run(self.layer.tensor_activation, self.dataset)
+        ordered_y = np.sort(np.reshape(batch_y, [np.product(batch_y.shape)]))
+        self.min_y = ordered_y[0]
+        self.max_y = ordered_y[-1]
 
     def to_k210(self):
-        return {'name': self.name}
+        self.collection()
+        act_tab = None
+        if self.name == 'leaky':
+            act_tab = K210Act.leaky_table(self.min_y, self.max_y)
+        elif self.name == 'linear':
+            act_tab = K210Act.linear_table(self.min_y, self.max_y)
+        else:
+            assert (None)
+        return {'active_addr': K210Act.table_to_act(list(act_tab))}
 
 
 class K210Pool:
@@ -300,7 +377,7 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
                 bias_shape = conv_layer.bias.shape
                 cur_k210.bn = K210BN(0, 1, np.ones(bias_shape), conv_layer.bias)
 
-            cur_k210.act = K210Act(conv_layer.config['activation'])
+            cur_k210.act = K210Act(conv_layer, sess, dataset, conv_layer.config['activation'])
 
         if len(buffer) > 0 and isinstance(buffer[-1], level2_layers.LayerMaxpool):
             pool_layer = buffer.pop()

@@ -76,7 +76,7 @@ def main():
         # print(level3_gen_file.gen_config_file(layers))
         # weights = level3_gen_file.gen_weights(layers)
         # print(len(weights))
-        print(',\n'.join(code))
+        print(code)
         pass
 
 
