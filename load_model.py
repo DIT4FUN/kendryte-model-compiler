@@ -71,11 +71,13 @@ def main():
                    ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')])
         k210_layers = level4_k210.gen_k210_layers(layers, sess, {'input:0': dataset})
 
-        temp = list(it.to_k210() for it in k210_layers)
         code = level5_gen_code.gen_layer_list_code(k210_layers)
         # print(level3_gen_file.gen_config_file(layers))
         # weights = level3_gen_file.gen_weights(layers)
         # print(len(weights))
+        with open('gencode_output.c', 'w') as of:
+            of.write(code)
+
         print(code)
         pass
 

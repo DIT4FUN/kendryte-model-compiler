@@ -22,28 +22,33 @@ default_pool_arg = {
 #         shr_x, arg_x = log_next_pow_of_2(x_range)
 
 def signed_to_hex(value, width):
-    return hex(int((1<<width) + value) % (1<<width))
+    return hex(int((1 << width) + value) % (1 << width))
 
-def gen_layer_struct(klayer: level4_k210.K210Layer, last_layer, idx: int):
-    todo = None
+
+def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     reserved = 0
     set_to_zero = 0
+    img_ram_size = 2 * 1024 * 1024
 
-    conv_arg = klayer.conv and klayer.conv.to_k210(idx, last_layer) or default_conv_arg
+    conv_arg = klayer.conv and klayer.conv.to_k210(idx) or default_conv_arg
     act_arg = klayer.act and klayer.act.to_k210() or default_act_arg
     bn_arg = klayer.bn and klayer.bn.to_k210(conv_arg['swsx']) or default_bn_arg
     pool_arg = klayer.pool and klayer.pool.to_k210() or default_pool_arg
-    io_arg = klayer.to_k210()
+    io_arg = klayer.to_k210(idx)
+
+    img_input_size = conv_arg['channel_switch_addr'] * 64 * io_arg['i_ch_num']
+    img_output_size = io_arg['wb_channel_switch_addr'] * 64 * io_arg['o_ch_num']
+    assert (img_input_size + img_output_size <= img_ram_size)
 
     interrupt_enabe = {
-        'int_en': todo,
+        'int_en': set_to_zero,
         'ram_flag': reserved,
-        'full_add': todo,
+        'full_add': set_to_zero,
         'depth_wise_layer': conv_arg['depth_wise_layer']
     }
     image_addr = {
-        'image_src_addr': todo,
-        'image_dst_addr': todo
+        'image_src_addr': '(uint64_t)' + str((0 if not idx & 1 else (img_ram_size - img_input_size))/64),
+        'image_dst_addr': '(uint64_t)' + str((0 if idx & 1 else (img_ram_size - img_output_size))/64)
     }
     image_channel_num = {
         'i_ch_num': io_arg['i_ch_num'] - 1,
@@ -64,7 +69,7 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, last_layer, idx: int):
         'bypass_conv': 0 if klayer.conv else 1,
         'load_para': bn_arg['load_para'],
         'dma_burst_size': io_arg['dma_burst_size'],
-        'pad_value': conv_arg['pad_value'],
+        'pad_value': signed_to_hex(conv_arg['pad_value'], 8),
         'bwsx_base_addr': bn_arg['bwsx_base_addr'],
     }
     kernel_load_cfg = {
@@ -124,7 +129,7 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, last_layer, idx: int):
 
 def gen_layer_list_struct(klayers: [level4_k210.K210Layer]):
     ret = [
-        gen_layer_struct(klayer, idx, (klayers[idx - 1] if idx > 0 else None))
+        gen_layer_struct(klayer, idx)
         for klayer, idx in zip(klayers, range(len(klayers)))
     ]
     return ret
@@ -138,7 +143,7 @@ def gen_layer_code(dlayer, idx):
                     '  .' + str(k) + ' = ' + (
                         str(v)
                         if str(k) not in ('bwsx_base_addr', 'para_start_addr', 'active_addr')
-                        else str(k) + '_' + str(idx)
+                        else '0'  # '(uint64_t)' + str(k) + '_' + str(idx)
                     )
                     for k, v in data.items()
                 ]) + '\n }'
@@ -146,26 +151,91 @@ def gen_layer_code(dlayer, idx):
             ]) +
             '\n}')
 
+
 def gen_bn_code(dlayer, idx):
     bn_list = dlayer['kernel_pool_type_cfg']['bwsx_base_addr']
     bn_code_list = [('{.batchnorm.data = {\n' +
-            '  .norm_mul = '+str(bn['norm_mul'])+',\n'+
-            '  .norm_add = '+str(bn['norm_add'])+',\n'+
-            '  .norm_shift = '+str(bn['norm_shift'])+'\n'+
-            '}}') for bn in bn_list]
-    return 'cnn_batchnorm_argument_t bwsx_base_addr_'+str(idx)+'[] = {\n'+',\n'.join(bn_code_list) + '\n};'
+                     '  .norm_mul = ' + str(bn['norm_mul']) + ',\n' +
+                     '  .norm_add = ' + str(bn['norm_add']) + ',\n' +
+                     '  .norm_shift = ' + str(bn['norm_shift']) + '\n' +
+                     '}}') for bn in bn_list]
+    return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(idx) + '[] = {\n' + ',\n'.join(bn_code_list) + '\n};'
+
+
+def gen_act_code(dlayer, idx):
+    act_list = dlayer['kernel_calc_type_cfg']['active_addr']
+    active_para = ' .activate_para = {\n' + ',\n'.join([
+        '  {{.data = {{.shift_number={dxs}, .y_mul={dy}, .x_start={x} }}}}'.format(
+            dxs=item['dxs'], dy=int(item['dy']), x=signed_to_hex(item['x'], 40)
+        )
+        for item in act_list
+    ]) + '\n }'
+    bias_list = [item['y'] for item in act_list]
+    active_para_bias0 = (' .activate_para_bias0.data = {{\n' + \
+                         '  .result_bias = {{{},{},{},{},{},{},{},{}}}\n' + \
+                         ' }}').format(*(bias_list[:8]))
+    active_para_bias1 = (' .activate_para_bias1.data = {{\n' + \
+                         '  .result_bias = {{{},{},{},{},{},{},{},{}}}\n' + \
+                         ' }}').format(*(bias_list[8:]))
+
+    return 'cnn_activate_table_t active_addr_' + str(idx) + ' = {\n' + \
+           ',\n'.join([active_para, active_para_bias0, active_para_bias1]) + \
+           '\n};'
+
+
+def gen_weights_code(dlayer, idx):
+    weights = dlayer['kernel_load_cfg']['para_start_addr']
+    weights_data = ', '.join([
+        signed_to_hex(item, 16)
+        for item in weights
+    ])
+    return 'uint16_t para_start_addr_{idx}[] = {{{data}}};'.format(idx=idx, data=weights_data)
 
 
 def gen_layer_list_code(klayers: [level4_k210.K210Layer]):
     structs = gen_layer_list_struct(klayers)
 
-    layer_part = 'cnn_layer_argument_t la[] = {'+',\n'.join([
+    header_part = '#include "cnn.h"'
+    footer_part = '\n'.join([
+        'cnn_task_t* cnn_task_init(cnn_task_t* task){',
+        ' task->length = sizeof(la)/sizeof(la[0]);',
+        '\n '.join([
+            'la[{idx}].kernel_pool_type_cfg.data.bwsx_base_addr = (uint64_t)&bwsx_base_addr_{idx};\n'
+            'la[{idx}].kernel_calc_type_cfg.data.active_addr = (uint64_t)&active_addr_{idx};\n'
+            'la[{idx}].kernel_load_cfg.data.para_start_addr = (uint64_t)&para_start_addr_{idx};'
+                .format(idx=idx)
+            for idx in range(len(structs))
+        ]),
+        ' task->layers = la;',
+        ' return task;',
+        '}'
+    ])
+
+    layer_part = 'cnn_layer_argument_t la[] = {' + ',\n'.join([
         gen_layer_code(layer, idx)
         for layer, idx in zip(structs, range(len(structs)))
-    ])+'};'
+    ]) + '};'
 
     bn_part = [
         gen_bn_code(layer, idx)
         for layer, idx in zip(structs, range(len(structs)))
     ]
-    return layer_part + '\n\n' + '\n'.join(bn_part)
+
+    act_part = [
+        gen_act_code(layer, idx)
+        for layer, idx in zip(structs, range(len(structs)))
+    ]
+
+    weights_part = [
+        gen_weights_code(layer, idx)
+        for layer, idx in zip(structs, range(len(structs)))
+    ]
+
+    return '\n\n'.join([
+        header_part,
+        '\n'.join(act_part),
+        '\n'.join(bn_part),
+        '\n'.join(weights_part),
+        layer_part,
+        footer_part,
+    ])

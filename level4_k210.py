@@ -13,9 +13,11 @@ def log_next_pow_of_2(value):
     return ret, value
 
 
-def pow_next_log_of_2(value, bound_shift):
+def pow_next_log_of_2(value, bound_shift, max_shift_shift=4):
     ret = 0
-    while value >= -(1 << (bound_shift - 2)) and value < (1 << (bound_shift - 2)) and value != 0:
+    max_shift = 1 << max_shift_shift
+    while value >= -(1 << (bound_shift - 2)) and value < (1 << (bound_shift - 2)) \
+            and value != 0 and ret < (max_shift - 1):
         value = value * 2
         ret = ret + 1
 
@@ -105,7 +107,7 @@ class K210Conv:
     #     n = math.floor(buf_size / o_ch_weights_size)
     #     return K210Layer.batch(weights_o_ch_list, n)
 
-    def to_k210(self, idx, last_layer):
+    def to_k210(self, idx):
         self.collection()
         weight_buffer_size = 2 * 9 * 4096
         weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65536
@@ -254,7 +256,7 @@ class K210Act:
         act_table = [(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
         min_y = act_table[0][1]
         max_y = act_table[-1][1]
-        scale = 256 / (max_y - min_y)
+        scale = 255 / (max_y - min_y)
         bias = -min_y * scale
 
         def ret_aux(x, y, dydx):
@@ -273,9 +275,9 @@ class K210Act:
         self.collection()
         act_tab = None
         if self.name == 'leaky':
-            act_tab = K210Act.leaky_table(self.min_y, self.max_y)
+            act_tab = list(K210Act.leaky_table(self.min_y, self.max_y))[:16]
         elif self.name == 'linear':
-            act_tab = K210Act.linear_table(self.min_y, self.max_y)
+            act_tab = list(K210Act.linear_table(self.min_y, self.max_y))[:16]
         else:
             assert (None)
         return {'active_addr': K210Act.table_to_act(list(act_tab))}
@@ -311,7 +313,7 @@ class K210Layer:
         for ndx in range(0, l, n):
             yield iter[ndx:min(ndx + n, l)]
 
-    def to_k210(self):
+    def to_k210(self, idx):
         if self.pool is not None:
             output_shape = self.pool.tensor.shape
         else:
@@ -342,7 +344,7 @@ class K210Layer:
         int_en = 0
         image_src_addr = None
         image_dst_addr = None
-        dma_total_byte = int(np.product(self.conv.output_shape[1:]))
+        dma_total_byte = wb_channel_switch_addr * 64 * o_ch_num
         dma_burst_size = 0xf
         send_data_out = 0
         return locals()
