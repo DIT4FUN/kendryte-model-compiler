@@ -68,7 +68,9 @@ def main():
         converter.convert_all()
         layers = level2_layers.make_layers(sess, converter.dst)
         dataset = np.array([box_image(path, 240, 320)[0].tolist() for path in
-                   ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')])
+                            # ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')
+                            ('pic/dog.bmp', )
+                            ])
         k210_layers = level4_k210.gen_k210_layers(layers, sess, {'input:0': dataset})
 
         code = level5_gen_code.gen_layer_list_code(k210_layers)

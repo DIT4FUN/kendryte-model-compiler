@@ -47,8 +47,8 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
         'depth_wise_layer': conv_arg['depth_wise_layer']
     }
     image_addr = {
-        'image_src_addr': '(uint64_t)' + str((0 if not idx & 1 else (img_ram_size - img_input_size))/64),
-        'image_dst_addr': '(uint64_t)' + str((0 if idx & 1 else (img_ram_size - img_output_size))/64)
+        'image_src_addr': '(uint64_t)' + str((0 if not idx & 1 else (img_ram_size - img_input_size)) / 64),
+        'image_dst_addr': '(uint64_t)' + str((0 if idx & 1 else (img_ram_size - img_output_size)) / 64)
     }
     image_channel_num = {
         'i_ch_num': io_arg['i_ch_num'] - 1,
@@ -186,8 +186,9 @@ def gen_act_code(dlayer, idx):
 def gen_weights_code(dlayer, idx):
     weights = dlayer['kernel_load_cfg']['para_start_addr']
     weights_data = ', '.join([
+        ('\n' if i % 64 == 0 else '') +
         signed_to_hex(item, 16)
-        for item in weights
+        for item, i in zip(weights, range(len(weights)))
     ])
     return 'uint16_t para_start_addr_{idx}[] = {{{data}}};'.format(idx=idx, data=weights_data)
 
@@ -199,10 +200,10 @@ def gen_layer_list_code(klayers: [level4_k210.K210Layer]):
     footer_part = '\n'.join([
         'cnn_task_t* cnn_task_init(cnn_task_t* task){',
         ' task->length = sizeof(la)/sizeof(la[0]);',
-        '\n '.join([
-            'la[{idx}].kernel_pool_type_cfg.data.bwsx_base_addr = (uint64_t)&bwsx_base_addr_{idx};\n'
-            'la[{idx}].kernel_calc_type_cfg.data.active_addr = (uint64_t)&active_addr_{idx};\n'
-            'la[{idx}].kernel_load_cfg.data.para_start_addr = (uint64_t)&para_start_addr_{idx};'
+        ' \n'.join([
+            ' la[{idx}].kernel_pool_type_cfg.data.bwsx_base_addr = (uint64_t)&bwsx_base_addr_{idx};\n'
+            ' la[{idx}].kernel_calc_type_cfg.data.active_addr = (uint64_t)&active_addr_{idx};\n'
+            ' la[{idx}].kernel_load_cfg.data.para_start_addr = (uint64_t)&para_start_addr_{idx};'
                 .format(idx=idx)
             for idx in range(len(structs))
         ]),
