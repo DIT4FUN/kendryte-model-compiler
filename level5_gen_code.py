@@ -36,8 +36,8 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     pool_arg = klayer.pool and klayer.pool.to_k210() or default_pool_arg
     io_arg = klayer.to_k210(idx)
 
-    img_input_size = conv_arg['channel_switch_addr'] * 64 * io_arg['i_ch_num']
-    img_output_size = io_arg['wb_channel_switch_addr'] * 64 * io_arg['o_ch_num']
+    img_input_size = int(conv_arg['channel_switch_addr'] * 64 * io_arg['i_ch_num'])
+    img_output_size = int(io_arg['wb_channel_switch_addr'] * 64 * io_arg['o_ch_num'])
     assert (img_input_size + img_output_size <= img_ram_size)
 
     interrupt_enabe = {
@@ -47,19 +47,19 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
         'depth_wise_layer': conv_arg['depth_wise_layer']
     }
     image_addr = {
-        'image_src_addr': '(uint64_t)' + str((0 if not idx & 1 else (img_ram_size - img_input_size)) / 64),
-        'image_dst_addr': '(uint64_t)' + str((0 if idx & 1 else (img_ram_size - img_output_size)) / 64)
+        'image_src_addr': '(uint64_t)' + hex(int((0 if not idx & 1 else (img_ram_size - img_input_size)) / 64)),
+        'image_dst_addr': '(uint64_t)' + hex(int((0 if idx & 1 else (img_ram_size - img_output_size)) / 64))
     }
     image_channel_num = {
-        'i_ch_num': io_arg['i_ch_num'] - 1,
-        'o_ch_num': io_arg['o_ch_num'] - 1,
-        'o_ch_num_coef': io_arg['o_ch_num_coef'] - 1,
+        'i_ch_num': hex(io_arg['i_ch_num'] - 1),
+        'o_ch_num': hex(io_arg['o_ch_num'] - 1),
+        'o_ch_num_coef': hex(io_arg['o_ch_num_coef'] - 1),
     }
     image_size = {
-        'i_row_wid': conv_arg['i_row_wid'] - 1,
-        'i_col_high': conv_arg['i_col_high'] - 1,
-        'o_row_wid': io_arg['o_row_wid'] - 1,
-        'o_col_high': io_arg['o_col_high'] - 1,
+        'i_row_wid': hex(conv_arg['i_row_wid'] - 1),
+        'i_col_high': hex(conv_arg['i_col_high'] - 1),
+        'o_row_wid': hex(io_arg['o_row_wid'] - 1),
+        'o_col_high': hex(io_arg['o_col_high'] - 1),
     }
     kernel_pool_type_cfg = {
         'kernel_type': conv_arg['kernel_type'],
@@ -83,8 +83,8 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
         'coef_row_offset': set_to_zero,
     }
     kernel_calc_type_cfg = {
-        'channel_switch_addr': conv_arg['channel_switch_addr'],
-        'row_switch_addr': conv_arg['row_switch_addr'],
+        'channel_switch_addr': hex(conv_arg['channel_switch_addr']),
+        'row_switch_addr': hex(conv_arg['row_switch_addr']),
         'coef_size': reserved,
         'coef_group': conv_arg['coef_group'],
         'load_act': 1 if klayer.act else 0,

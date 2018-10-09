@@ -80,7 +80,7 @@ def main():
         with open('gencode_output.c', 'w') as of:
             of.write(code)
 
-        print(code)
+        # print(code)
         pass
 
 
