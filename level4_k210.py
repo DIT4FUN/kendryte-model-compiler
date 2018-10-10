@@ -54,6 +54,11 @@ class K210Conv:
         batch_w = self.sess.run(self.layer.tensor_conv_w, self.dataset)
         ordered_w = np.sort(np.reshape(batch_w, [np.product(batch_w.shape)]))
 
+
+        # todo debug
+        batch_y = self.sess.run(self.layer.tensor_conv_y, self.dataset)
+        pass # debug
+
         # assert (len(ordered_x) > 10)
         # assert (len(ordered_w) > 10)
         # # x_min = ordered_x[int(len(ordered_x) * 0.05)]
@@ -61,7 +66,7 @@ class K210Conv:
         # x_min = ordered_x[0]  # TODO: fix do not use max-min value
         # x_max = ordered_x[-1]
 
-        self.x_range = (self.input_max - self.input_min) / 255
+        self.x_range = self.input_max - self.input_min
         self.x_bias = self.input_min
         assert (self.x_range > 0)
         # w_min = ordered_w[int(len(ordered_w) * 0.05)]
@@ -166,7 +171,7 @@ class K210Conv:
         #     bais_x, scale_x = (0, 1 / 256)
         # else:
         #     bais_x, scale_x = (self.x_bias, self.x_range / 256)
-        bais_x, scale_x = (self.x_bias, self.x_range)
+        bais_x, scale_x = (self.x_bias, 1/self.x_range)
 
         bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
         bx_div_sx = bais_x / scale_x
@@ -298,23 +303,24 @@ class K210Pool:
         self.dataset = dataset
 
     def to_k210(self):
-        # debug todo
-        def q8(a, minv, maxv):
-            scale = (maxv - minv) / 255
-            bias = minv
-            return a * scale + bias
-
-        batch_y = self.sess.run(self.tensor, self.dataset)
-        batch_x = self.sess.run(self.tensor.op.inputs[0], self.dataset)
-
-        ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
-        minx = ordered_x[0]
-        maxx = ordered_x[-1]
-        np.set_printoptions(formatter={'int': hex})
-        batch_y = q8(batch_y, minx, maxx).round().astype('int')
-        batch_x = q8(batch_x, minx, maxx).round().astype('int')
-        iy = batch_y[0].transpose([2,0,1])
-        ix = batch_x[0].transpose([2,0,1])
+        # # debug todo
+        # def q8(a, minv, maxv):
+        #     scale = (maxv - minv) / 255
+        #     bias = minv
+        #     return a * scale + bias
+        #
+        # batch_y = self.sess.run(self.tensor, self.dataset)
+        # batch_x = self.sess.run(self.tensor.op.inputs[0], self.dataset)
+        #
+        # ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
+        # minx = ordered_x[0]
+        # maxx = ordered_x[-1]
+        # np.set_printoptions(formatter={'int': hex})
+        # batch_y = q8(batch_y, minx, maxx).round().astype('int')
+        # batch_x = q8(batch_x, minx, maxx).round().astype('int')
+        # iy = batch_y[0].transpose([2,0,1])
+        # ix = batch_x[0].transpose([2,0,1])
+        # pass # debug
 
         if self.name == 'maxpool':
             return {'pool_type': {
