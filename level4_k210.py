@@ -400,7 +400,7 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
             last_max = last_act.max_y
         else:
             last_min = 0
-            last_max = 255.9999
+            last_max = 255
 
         if isinstance(buffer[-1], level2_layers.LayerConvolutional) \
                 or isinstance(buffer[-1], level2_layers.LayerDepthwiseConvolutional):
