@@ -30,7 +30,7 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     set_to_zero = 0
     img_ram_size = 2 * 1024 * 1024
 
-    conv_arg = klayer.conv and klayer.conv.to_k210(idx) or default_conv_arg
+    conv_arg = klayer.conv and klayer.conv.to_k210() or default_conv_arg
     act_arg = klayer.act and klayer.act.to_k210() or default_act_arg
     bn_arg = klayer.bn and klayer.bn.to_k210(conv_arg['swsx']) or default_bn_arg
     pool_arg = klayer.pool and klayer.pool.to_k210() or default_pool_arg

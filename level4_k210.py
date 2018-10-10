@@ -29,7 +29,7 @@ def signed_to_hex(value, width):
 
 
 class K210Conv:
-    def __init__(self, layer, sess, dataset, input_min, input_max):
+    def __init__(self, layer, sess, dataset, idx, input_min, input_max):
         self.layer = layer
         self.depth_wise_layer = isinstance(layer, level2_layers.LayerDepthwiseConvolutional)
         self.tensor = layer.tensor
@@ -37,6 +37,7 @@ class K210Conv:
         self.dataset = dataset
         self.input_min = input_min
         self.input_max = input_max
+        self.idx = idx
 
         self.x_range = None
         self.x_bias = None
@@ -49,22 +50,21 @@ class K210Conv:
         return (value - mean) / ranges
 
     def collection(self):
-        # batch_x = self.sess.run(self.layer.tensor_conv_x, self.dataset)
-        # ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
         batch_w = self.sess.run(self.layer.tensor_conv_w, self.dataset)
         ordered_w = np.sort(np.reshape(batch_w, [np.product(batch_w.shape)]))
 
 
-        # todo debug
-        batch_y = self.sess.run(self.layer.tensor_conv_y, self.dataset)
-        pass # debug
+        # # todo debug
+        # batch_y = self.sess.run(self.layer.tensor_conv_y, self.dataset)
+        # pass # debug
 
-        # assert (len(ordered_x) > 10)
-        # assert (len(ordered_w) > 10)
-        # # x_min = ordered_x[int(len(ordered_x) * 0.05)]
-        # # x_max = ordered_x[int(len(ordered_x) * 0.95)]
-        # x_min = ordered_x[0]  # TODO: fix do not use max-min value
-        # x_max = ordered_x[-1]
+        # if self.idx != 0:
+        #     batch_x = self.sess.run(self.layer.tensor_conv_x, self.dataset)
+        #     ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
+        #     x_min = ordered_x[0]
+        #     x_max = ordered_x[-1]
+        #     self.input_min = x_min
+        #     self.input_max = x_max
 
         self.x_range = self.input_max - self.input_min
         self.x_bias = self.input_min
@@ -115,7 +115,7 @@ class K210Conv:
     #     n = math.floor(buf_size / o_ch_weights_size)
     #     return K210Layer.batch(weights_o_ch_list, n)
 
-    def to_k210(self, idx):
+    def to_k210(self):
         self.collection()
         weight_buffer_size = 2 * 9 * 4096
         weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65536
@@ -171,7 +171,7 @@ class K210Conv:
         #     bais_x, scale_x = (0, 1 / 256)
         # else:
         #     bais_x, scale_x = (self.x_bias, self.x_range / 256)
-        bais_x, scale_x = (self.x_bias, 1/self.x_range)
+        bais_x, scale_x = (self.x_bias, self.x_range/255)
 
         bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
         bx_div_sx = bais_x / scale_x
@@ -400,13 +400,13 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
             last_max = last_act.max_y
         else:
             last_min = 0
-            last_max = 255
+            last_max = 1
 
         if isinstance(buffer[-1], level2_layers.LayerConvolutional) \
                 or isinstance(buffer[-1], level2_layers.LayerDepthwiseConvolutional):
             conv_layer = buffer.pop()
             # assert (isinstance(conv_layer, level2_layers.LayerConvolutional))
-            cur_k210.conv = K210Conv(conv_layer, sess, dataset, last_min, last_max)
+            cur_k210.conv = K210Conv(conv_layer, sess, dataset, len(ret), last_min, last_max)
             if int(conv_layer.config['batch_normalize']) == 1:
                 cur_k210.bn = K210BN(
                     conv_layer.batch_normalize_moving_mean,
