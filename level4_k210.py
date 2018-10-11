@@ -53,7 +53,6 @@ class K210Conv:
         batch_w = self.sess.run(self.layer.tensor_conv_w, self.dataset)
         ordered_w = np.sort(np.reshape(batch_w, [np.product(batch_w.shape)]))
 
-
         # # todo debug
         # batch_y = self.sess.run(self.layer.tensor_conv_y, self.dataset)
         # pass # debug
@@ -138,14 +137,8 @@ class K210Conv:
         output_all_size = int(input_shape[3]) * output_channel_size
         kernel_size = int(weights_shape[0])
         weight_kernel_size = kernel_size * kernel_size * weight_data_size
-        if kernel_size == 1:
-            weight_single_output_size = math.ceil(int(weights_shape[0] * weights_shape[1]) / 8) * 9 * weight_data_size
-        elif kernel_size == 3:
-            weight_single_output_size = weight_kernel_size * int(weights_shape[2])
-        else:
-            raise "unsupport kernel_size: " + str(kernel_size)
 
-        weight_all_size = weight_single_output_size * int(weights_shape[3])
+        weight_all_size = weight_kernel_size * int(weights_shape[2]) * int(weights_shape[3])
 
         # exports:
         bypass_conv = 0
@@ -154,15 +147,24 @@ class K210Conv:
         i_col_high = int(input_shape[1])
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
         row_switch_addr = math.ceil(i_row_wid / coef_group / 64)
-        channel_switch_addr = i_col_high*row_switch_addr if coef_group==1 else math.ceil(i_col_high / coef_group)
+        channel_switch_addr = i_col_high * row_switch_addr if coef_group == 1 else math.ceil(i_col_high / coef_group)
         # conv
         depth_wise_layer = 1 if self.depth_wise_layer else 0
         kernel_type = {1: 0, 3: 1}[kernel_size]
         pad_type = 0
         load_coor = 1
-        load_time = math.ceil(weight_all_size / weight_buffer_size)
-        para_size = min(math.floor(weight_buffer_size / weight_single_output_size) * weight_single_output_size,
-                        weight_all_size)
+        weights_ich = int(weights_shape[2])
+        weights_och = int(weights_shape[3])
+
+        if kernel_size == 3:
+            load_time = math.ceil(weights_och / math.floor(4096 / weights_ich))
+        elif kernel_size == 1:
+            load_time = math.ceil(weights_och / math.floor(4096 * 8 / weights_ich))
+        else:
+            assert (None)
+
+        para_size = int(weight_all_size / load_time)
+
         para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
@@ -171,7 +173,7 @@ class K210Conv:
         #     bais_x, scale_x = (0, 1 / 256)
         # else:
         #     bais_x, scale_x = (self.x_bias, self.x_range / 256)
-        bais_x, scale_x = (self.x_bias, self.x_range/255)
+        bais_x, scale_x = (self.x_bias, self.x_range / 255)
 
         bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
         bx_div_sx = bais_x / scale_x
@@ -280,7 +282,6 @@ class K210Act:
         self.min_y = ordered_y[0]
         self.max_y = ordered_y[-1]
 
-
     def to_k210(self):
         self.collection()
         act_tab = None
@@ -369,7 +370,7 @@ class K210Layer:
         o_col_high = int(output_shape[1])
         wb_group = 1 if o_row_wid > 32 else (2 if o_row_wid > 16 else 4)
         wb_row_switch_addr = math.ceil(o_row_wid / wb_group / 64)
-        wb_channel_switch_addr = o_col_high*wb_row_switch_addr if wb_group==1 else math.ceil(o_col_high / wb_group)
+        wb_channel_switch_addr = o_col_high * wb_row_switch_addr if wb_group == 1 else math.ceil(o_col_high / wb_group)
         channel_byte_num = wb_channel_switch_addr * int(output_shape[3])
 
         int_en = 0
@@ -423,7 +424,8 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
         if len(buffer) > 0 and isinstance(buffer[-1], level2_layers.LayerMaxpool):
             pool_layer = buffer.pop()
             assert (isinstance(pool_layer, level2_layers.LayerMaxpool))
-            cur_k210.pool = K210Pool(pool_layer, 'maxpool', pool_layer.config['size'], pool_layer.config['stride'], sess, dataset)
+            cur_k210.pool = K210Pool(pool_layer, 'maxpool', pool_layer.config['size'], pool_layer.config['stride'],
+                                     sess, dataset)
 
         ret.append(cur_k210)
 
