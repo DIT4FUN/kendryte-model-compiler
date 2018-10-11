@@ -91,8 +91,8 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
         'active_addr': act_arg['active_addr']
     }
     write_back_cfg = {
-        'wb_channel_switch_addr': io_arg['wb_channel_switch_addr'],
-        'wb_row_switch_addr': io_arg['wb_row_switch_addr'],
+        'wb_channel_switch_addr': hex(io_arg['wb_channel_switch_addr']),
+        'wb_row_switch_addr': hex(io_arg['wb_row_switch_addr']),
         'wb_group': io_arg['wb_group']
     }
     conv_value = {

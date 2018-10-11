@@ -117,7 +117,7 @@ class K210Conv:
     def to_k210(self):
         self.collection()
         weight_buffer_size = 2 * 9 * 4096
-        weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65536
+        weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65535
         weights = self.layer.weights
 
         input_shape = self.layer.tensor_conv_x.shape
@@ -270,7 +270,7 @@ class K210Act:
 
         def ret_aux(x, y, dydx):
             dydx_scaled = dydx * scale_y
-            y_scaled = math.floor(y * scale_y + bias_y)
+            y_scaled = round(y * scale_y + bias_y)
             dxss, dys = K210Act.find_shift(dydx_scaled)
             return {'x': round(x), 'y': y_scaled, 'dxs': dxss, 'dy': round(dys)}
 
@@ -304,24 +304,25 @@ class K210Pool:
         self.dataset = dataset
 
     def to_k210(self):
-        # # debug todo
-        # def q8(a, minv, maxv):
-        #     scale = (maxv - minv) / 255
-        #     bias = minv
-        #     return a * scale + bias
-        #
-        # batch_y = self.sess.run(self.tensor, self.dataset)
-        # batch_x = self.sess.run(self.tensor.op.inputs[0], self.dataset)
-        #
-        # ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
-        # minx = ordered_x[0]
-        # maxx = ordered_x[-1]
-        # np.set_printoptions(formatter={'int': hex})
-        # batch_y = q8(batch_y, minx, maxx).round().astype('int')
-        # batch_x = q8(batch_x, minx, maxx).round().astype('int')
-        # iy = batch_y[0].transpose([2,0,1])
-        # ix = batch_x[0].transpose([2,0,1])
-        # pass # debug
+        # debug todo
+        def q8(a, minv, maxv):
+            scale = (maxv - minv) / 255
+            bias = minv
+            return (a - bias) / scale
+
+        batch_y = self.sess.run(self.tensor, self.dataset)
+        batch_x = self.sess.run(self.tensor.op.inputs[0], self.dataset)
+
+        ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
+        minx = ordered_x[0]
+        maxx = ordered_x[-1]
+        np.set_printoptions(formatter={'int': hex})
+        batch_y = q8(batch_y, minx, maxx).round().astype('int')
+        batch_x = q8(batch_x, minx, maxx).round().astype('int')
+        iy = batch_y[0].transpose([2,0,1])
+        ix = batch_x[0].transpose([2,0,1])
+        # print(iy[0][0][:16])
+        pass # debug
 
         if self.name == 'maxpool':
             return {'pool_type': {
