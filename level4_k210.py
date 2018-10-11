@@ -163,7 +163,7 @@ class K210Conv:
         load_time = math.ceil(weight_all_size / weight_buffer_size)
         para_size = min(math.floor(weight_buffer_size / weight_single_output_size) * weight_single_output_size,
                         weight_all_size)
-        para_start_addr = [round(item) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
+        para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
 

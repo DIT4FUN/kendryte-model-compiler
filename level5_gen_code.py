@@ -154,10 +154,10 @@ def gen_layer_code(dlayer, idx):
 
 def gen_bn_code(dlayer, idx):
     bn_list = dlayer['kernel_pool_type_cfg']['bwsx_base_addr']
-    bn_code_list = [('{.batchnorm.data = {\n' +
-                     '  .norm_mul = ' + str(bn['norm_mul']) + ',\n' +
-                     '  .norm_add = ' + str(bn['norm_add']) + ',\n' +
-                     '  .norm_shift = ' + str(bn['norm_shift']) + '\n' +
+    bn_code_list = [(' {.batchnorm.data = {' +
+                     '.norm_mul = ' + str(bn['norm_mul']) + ', ' +
+                     '.norm_add = ' + str(bn['norm_add']) + ', ' +
+                     '.norm_shift = ' + str(bn['norm_shift']) +
                      '}}') for bn in bn_list]
     return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(idx) + '[] = {\n' + ',\n'.join(bn_code_list) + '\n};'
 
