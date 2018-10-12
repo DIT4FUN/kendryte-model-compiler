@@ -159,7 +159,7 @@ def gen_bn_code(dlayer, idx):
                      '.norm_add = ' + str(bn['norm_add']) + ', ' +
                      '.norm_shift = ' + str(bn['norm_shift']) +
                      '}}') for bn in bn_list]
-    return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(idx) + '[] = {\n' + ',\n'.join(bn_code_list) + '\n};'
+    return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(idx) + '[] __attribute__((aligned(128))) = {\n' + ',\n'.join(bn_code_list) + '\n};'
 
 
 def gen_act_code(dlayer, idx):
@@ -178,7 +178,7 @@ def gen_act_code(dlayer, idx):
                          '  .result_bias = {{{},{},{},{},{},{},{},{}}}\n' + \
                          ' }}').format(*(bias_list[8:]))
 
-    return 'cnn_activate_table_t active_addr_' + str(idx) + ' = {\n' + \
+    return 'cnn_activate_table_t active_addr_' + str(idx) + ' __attribute__((aligned(128))) = {\n' + \
            ',\n'.join([active_para, active_para_bias0, active_para_bias1]) + \
            '\n};'
 
@@ -190,7 +190,7 @@ def gen_weights_code(dlayer, idx):
         signed_to_hex(item, 16)
         for item, i in zip(weights, range(len(weights)))
     ])
-    return 'uint16_t para_start_addr_{idx}[] = {{{data}}};'.format(idx=idx, data=weights_data)
+    return 'uint16_t para_start_addr_{idx}[] __attribute__((aligned(128))) = {{{data}}};'.format(idx=idx, data=weights_data)
 
 
 def gen_layer_list_code(klayers: [level4_k210.K210Layer]):
@@ -212,7 +212,7 @@ def gen_layer_list_code(klayers: [level4_k210.K210Layer]):
         '}'
     ])
 
-    layer_part = 'cnn_layer_argument_t la[] = {' + ',\n'.join([
+    layer_part = 'cnn_layer_argument_t la[] __attribute__((aligned(128))) = {' + ',\n'.join([
         gen_layer_code(layer, idx)
         for layer, idx in zip(structs, range(len(structs)))
     ]) + '};'
