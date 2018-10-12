@@ -166,7 +166,7 @@ def gen_act_code(dlayer, idx):
     act_list = dlayer['kernel_calc_type_cfg']['active_addr']
     active_para = ' .activate_para = {\n' + ',\n'.join([
         '  {{.data = {{.shift_number={dxs}, .y_mul={dy}, .x_start={x} }}}}'.format(
-            dxs=item['dxs'], dy=int(item['dy']), x=signed_to_hex(item['x'], 40)
+            dxs=item['dxs'], dy=int(item['dy']), x=signed_to_hex(item['x'], 36)
         )
         for item in act_list
     ]) + '\n }'

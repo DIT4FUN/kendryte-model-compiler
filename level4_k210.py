@@ -235,28 +235,28 @@ class K210Act:
     @staticmethod
     def leaky_table(min_y, max_y):
         range_y = max_y - min_y
-        y_table = [min_y + i * range_y / 15 for i in range(15)]
+        y_table = [min_y + i * range_y / 14 for i in range(14)]
         y_table.append(0)
         y_table.append(max_y)
         y_table = sorted(y_table)
         x_table = [K210Act.leaky_relu_inverse(it) for it in y_table]
-        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(16)]
+        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table)-1)]
         return zip(x_table, y_table, dydx)
 
     @staticmethod
     def linear_table(min_y, max_y):
         range_y = max_y - min_y
-        y_table = [min_y + i * range_y / 15 for i in range(15)]
+        y_table = [min_y + i * range_y / 14 for i in range(14)]
         y_table.append(0)
         y_table.append(max_y)
         y_table = sorted(y_table)
-        return zip(y_table, y_table, [1] * len(y_table))
+        return zip(y_table, y_table, [1] * (len(y_table)-1))
 
     @staticmethod
     def find_shift(dydx):
-        assert (dydx > 0)
+        assert (dydx >= 0)
         ret_shift = 0
-        while (dydx < (1 << 14)):
+        while abs(dydx) < (1 << 14) and dydx != 0:
             dydx = dydx * 2
             ret_shift = ret_shift + 1
         return ret_shift, dydx
@@ -264,7 +264,7 @@ class K210Act:
     @staticmethod
     def table_to_act(act_table, min_y, max_y):
         __tmp_hotfix_magic = 100000000.0 / 3
-        act_table = [(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
+        act_table = [(0,0,0)]+[(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
         scale_y = 255 / (max_y - min_y)
         bias_y = -min_y * scale_y
 
