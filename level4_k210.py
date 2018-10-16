@@ -163,7 +163,6 @@ class K210Conv:
         else:
             assert (None)
 
-        para_size = int(weight_all_size / load_time)
 
         para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
@@ -372,8 +371,9 @@ class K210Layer:
             o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
 
         if int(weights_shape[0])==1:
-            o_ch_weights_size = math.ceil(o_ch_weights_size/8)*9
+            o_ch_weights_size_pad = math.ceil(o_ch_weights_size/8)*9
         else:
+            o_ch_weights_size_pad = o_ch_weights_size
             assert(int(weights_shape[0])==3)
 
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
@@ -381,7 +381,8 @@ class K210Layer:
         # io
         i_ch_num = int(weights_shape[2])
         o_ch_num = int(output_shape[3])
-        o_ch_num_coef = min(math.floor(buf_size / o_ch_weights_size), int(output_shape[3]))
+        o_ch_num_coef = min(math.floor(buf_size / o_ch_weights_size_pad), int(output_shape[3]))
+        para_size = o_ch_num_coef * o_ch_weights_size
         # img o
         o_row_wid = int(output_shape[2])
         o_col_high = int(output_shape[1])

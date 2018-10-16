@@ -41,6 +41,7 @@ def split_chunks(L, n):
 def q8(a, minv, maxv):
     scale = (maxv - minv) / 255
     bias = minv
+    print('q8', 'scale:', scale, 'bias:', bias)
     return (a - bias) / scale
 
 def debug_format(mid, fout=None):
@@ -143,7 +144,7 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     kernel_load_cfg = {
         'load_coor': conv_arg['load_coor'],
         'load_time': conv_arg['load_time'] - 1,
-        'para_size': conv_arg['para_size'],
+        'para_size': io_arg['para_size'],
         'para_start_addr': conv_arg['para_start_addr'],
     }
     kernel_offset = {
