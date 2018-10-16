@@ -146,8 +146,8 @@ class K210Conv:
         i_row_wid = int(input_shape[2])
         i_col_high = int(input_shape[1])
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
-        row_switch_addr = math.ceil(i_row_wid / coef_group / 64)
-        channel_switch_addr = i_col_high * row_switch_addr if coef_group == 1 else math.ceil(i_col_high / coef_group)
+        row_switch_addr = math.ceil(i_row_wid / 64)
+        channel_switch_addr = i_col_high * row_switch_addr #if coef_group == 1 else math.ceil(i_col_high / coef_group)
         # conv
         depth_wise_layer = 1 if self.depth_wise_layer else 0
         kernel_type = {1: 0, 3: 1}[kernel_size]
@@ -264,7 +264,7 @@ class K210Act:
     @staticmethod
     def table_to_act(act_table, min_y, max_y):
         __tmp_hotfix_magic = 100000000.0 / 3
-        act_table = [(0,0,0)]+[(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
+        act_table = [(0x800000000,0,0)]+[(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
         scale_y = 255 / (max_y - min_y)
         bias_y = -min_y * scale_y
 
@@ -303,6 +303,9 @@ class K210Pool:
         self.sess = sess
         self.dataset = dataset
 
+
+
+
     def to_k210(self):
         # debug todo
         def q8(a, minv, maxv):
@@ -321,6 +324,9 @@ class K210Pool:
         batch_x = q8(batch_x, minx, maxx).round().astype('int')
         iy = batch_y[0].transpose([2,0,1])
         ix = batch_x[0].transpose([2,0,1])
+        # print("=============", self.tensor.name)
+        # with open('mid_data/'+self.tensor.name, 'w') as fout:
+        #     K210Pool.debug_format(iy, fout)
         # print(iy[0][0][:16])
         pass # debug
 
@@ -359,7 +365,17 @@ class K210Layer:
         img_data_size = 1
         img_line_size = 64
         buf_size = 4096 * 3 * 3 * weight_data_size
-        o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
+
+        if self.conv.depth_wise_layer:
+            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * weight_data_size
+        else:
+            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
+
+        if int(weights_shape[0])==1:
+            o_ch_weights_size = math.ceil(o_ch_weights_size/8)*9
+        else:
+            assert(int(weights_shape[0])==3)
+
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
 
         # io
@@ -370,14 +386,14 @@ class K210Layer:
         o_row_wid = int(output_shape[2])
         o_col_high = int(output_shape[1])
         wb_group = 1 if o_row_wid > 32 else (2 if o_row_wid > 16 else 4)
-        wb_row_switch_addr = math.ceil(o_row_wid / wb_group / 64)
-        wb_channel_switch_addr = o_col_high * wb_row_switch_addr if wb_group == 1 else math.ceil(o_col_high / wb_group)
-        channel_byte_num = wb_channel_switch_addr * int(output_shape[3])
+        wb_row_switch_addr = math.ceil(o_row_wid / 64)
+        wb_channel_switch_addr = o_col_high * wb_row_switch_addr #if wb_group == 1 else math.ceil(o_col_high / wb_group)
+        channel_byte_num = o_row_wid * o_col_high
 
         int_en = 0
         image_src_addr = None
         image_dst_addr = None
-        dma_total_byte = wb_channel_switch_addr * 64 * o_ch_num
+        dma_total_byte = o_row_wid * o_col_high * o_ch_num
         dma_burst_size = 0xf
         send_data_out = 0
         return locals()

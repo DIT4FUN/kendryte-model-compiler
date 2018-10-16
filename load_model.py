@@ -14,7 +14,7 @@ import level5_gen_code
 def load_graph():
     with tf.Session() as persisted_sess:
         print("load graph")
-        with gfile.FastGFile("graph_yv2_DW.graph", 'rb') as f:
+        with gfile.FastGFile("graph_yv2_DW.pb", 'rb') as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
             persisted_sess.graph.as_default()
@@ -34,7 +34,7 @@ def load_graph():
         writer = tf.summary.FileWriter("./graphs", persisted_sess.graph)
         writer.close()
 
-        return persisted_sess.graph._nodes_by_name['21_yv2_raw'].outputs[0]
+        return persisted_sess.graph._nodes_by_name['yv2'].outputs[0]
 
 
 def box_image(im_path, new_h, new_w):

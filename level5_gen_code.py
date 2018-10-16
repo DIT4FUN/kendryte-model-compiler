@@ -1,4 +1,6 @@
 import level4_k210
+import numpy as np
+import math
 
 default_conv_arg = None
 default_act_arg = None
@@ -25,6 +27,50 @@ def signed_to_hex(value, width):
     return hex(int((1 << width) + value) % (1 << width))
 
 
+def debug_format_line(line, fout):
+    line = [*line, *([0]*(64-len(line)))]
+    ret = ''.join([format(v, '02x')+('  'if i%8==7 else ('--' if i%8==3 else '')) for v,i in zip(line, range(len(line)))])
+    fout.write('Address 0X00000000: '+ret+'\n')
+
+def split_chunks(L, n):
+    """ Yield successive n-sized chunks from L.
+    """
+    for i in range(0, len(L), n):
+        yield L[i:i+n]
+
+def q8(a, minv, maxv):
+    scale = (maxv - minv) / 255
+    bias = minv
+    return (a - bias) / scale
+
+def debug_format(mid, fout=None):
+    for ch in mid:
+        if len(ch[0]) >= 32:
+            for line in ch:
+                # line = np.array([*line, *([0]*(math.ceil(len(line)/64)*64-len(line)))])
+                lls = split_chunks(line, 64)
+                for ll in lls:
+                    debug_format_line(ll, fout)
+        elif len(ch[0]) >= 16:
+            lines = list(split_chunks(ch, 2))
+            for line in lines:
+                line = list(line)
+                pad = [0]*(32 - len(line[0]))
+                line.append(line[0])
+                ll = [*line[0], *pad, *line[1], *pad]
+                debug_format_line(ll, fout)
+        else:
+            lines = list(split_chunks(ch,4))
+            for line in lines:
+                line = list(line)
+                pad = [0]*(16 - len(line[0]))
+                line.append(line[0])
+                line.append(line[0])
+                line.append(line[0])
+                ll = [*line[0], *pad, *line[1], *pad, *line[2], *pad, *line[3], *pad]
+                debug_format_line(ll, fout)
+
+
 def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     reserved = 0
     set_to_zero = 0
@@ -36,8 +82,30 @@ def gen_layer_struct(klayer: level4_k210.K210Layer, idx: int):
     pool_arg = klayer.pool and klayer.pool.to_k210() or default_pool_arg
     io_arg = klayer.to_k210(idx)
 
-    img_input_size = int(conv_arg['channel_switch_addr'] * 64 * io_arg['i_ch_num'])
-    img_output_size = int(io_arg['wb_channel_switch_addr'] * 64 * io_arg['o_ch_num'])
+    if klayer.pool:
+        tensor_out = klayer.pool.tensor
+        tensor_pre_out = klayer.pool.tensor.op.inputs[0]
+        batch_x = klayer.conv.sess.run(tensor_pre_out, klayer.conv.dataset)
+        ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
+        mino = ordered_x[0]
+        maxo = ordered_x[-1]
+        batch_y = klayer.conv.sess.run(tensor_out, klayer.conv.dataset)
+    else:
+        tensor_out = klayer.act.layer.tensor_activation
+        batch_y = klayer.conv.sess.run(tensor_out, klayer.conv.dataset)
+        ordered_o = np.sort(np.reshape(batch_y, [np.product(batch_y.shape)]))
+        mino = ordered_o[0]
+        maxo = ordered_o[-1]
+
+    qy = q8(batch_y, mino, maxo).round().astype('int')
+    iy = qy[0].transpose([2,0,1])
+    print("=============", tensor_out.name)
+    with open('mid_data/'+tensor_out.name.replace('/', '_'), 'w') as fout:
+        debug_format(iy, fout)
+
+    img_input_size = int(math.ceil(io_arg['i_ch_num']/conv_arg['coef_group']) * 64 * conv_arg['channel_switch_addr'])
+    img_output_size = int(math.ceil(io_arg['o_ch_num']/io_arg['wb_group']) * 64 * io_arg['wb_channel_switch_addr'])
+
     assert (img_input_size + img_output_size <= img_ram_size)
 
     interrupt_enabe = {
@@ -136,7 +204,7 @@ def gen_layer_list_struct(klayers: [level4_k210.K210Layer]):
 
 
 def gen_layer_code(dlayer, idx):
-    return ('{\n' +
+    return ('// '+str(idx)+'\n{\n' +
             ',\n'.join([
                 ' .' + reg_name + '.data = {\n' +
                 ',\n'.join([
@@ -212,7 +280,7 @@ def gen_layer_list_code(klayers: [level4_k210.K210Layer]):
         '}'
     ])
 
-    layer_part = 'cnn_layer_argument_t la[] __attribute__((aligned(128))) = {' + ',\n'.join([
+    layer_part = 'cnn_layer_argument_t la[] __attribute__((aligned(128))) = {\n' + ',\n'.join([
         gen_layer_code(layer, idx)
         for layer, idx in zip(structs, range(len(structs)))
     ]) + '};'
