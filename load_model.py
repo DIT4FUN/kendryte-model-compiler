@@ -6,15 +6,14 @@ from tensorflow.python.platform import gfile
 
 import tensor_head_to_tensor_list
 import tensor_list_to_layers
-import layer_list_to_darknet
 import layer_list_to_k210_layer
 import k210_layer_to_c_code
 
 
-def load_graph():
+def load_graph(pb_file_path, tensor_head_name):
     with tf.Session() as persisted_sess:
         print("load graph")
-        with gfile.FastGFile("graph_yv2_DW.pb", 'rb') as f:
+        with gfile.FastGFile(pb_file_path, 'rb') as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
             persisted_sess.graph.as_default()
@@ -24,7 +23,7 @@ def load_graph():
         writer = tf.summary.FileWriter("./graphs", persisted_sess.graph)
         writer.close()
 
-        return persisted_sess.graph._nodes_by_name['yv2'].outputs[0]
+        return persisted_sess.graph._nodes_by_name[tensor_head_name].outputs[0]
 
 
 def box_image(im_path, new_h, new_w):
@@ -51,7 +50,7 @@ def box_image(im_path, new_h, new_w):
 
 
 def main():
-    t = load_graph()
+    t = load_graph("graph_yv2_DW.pb", 'yv2')
 
     with tf.Session() as sess:
         converter = tensor_head_to_tensor_list.PbConverter(t)
@@ -64,13 +63,9 @@ def main():
         k210_layers = layer_list_to_k210_layer.gen_k210_layers(layers, sess, {'input:0': dataset})
 
         code = k210_layer_to_c_code.gen_layer_list_code(k210_layers)
-        # print(level3_gen_file.gen_config_file(layers))
-        # weights = level3_gen_file.gen_weights(layers)
-        # print(len(weights))
         with open('gencode_output.c', 'w') as of:
             of.write(code)
 
-        # print(code)
         pass
 
 

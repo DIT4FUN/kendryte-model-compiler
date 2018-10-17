@@ -13,65 +13,27 @@ default_pool_arg = {
 }
 
 
-#
-# def q_reverse(qvalue, ranges, mean):
-#     return qvalue * ranges + mean
-#
-#
-# def gen_layers_conv_weights(klayers: [level4_k210.K210Layer], x_range, x_mean, w_range, w_mean):
-#         arg_add = x_mean * w_mean + w_mean * x_range
-#         shr_w, arg_w = log_next_pow_of_2(w_range)
-#         shr_x, arg_x = log_next_pow_of_2(x_range)
-
 def signed_to_hex(value, width):
     return hex(int((1 << width) + value) % (1 << width))
 
+
 def debug_format_line(line, fout):
-    line = [*line, *([0]*(64-len(line)))]
-    ret = ''.join([format(v, '02x')+('  'if i%8==7 else ('--' if i%8==3 else '')) for v,i in zip(line, range(len(line)))])
-    fout.write('Address 0X00000000: '+ret+'\n')
+    line = [*line, *([0] * (64 - len(line)))]
+    ret = ''.join([format(v, '02x') + ('  ' if i % 8 == 7 else ('--' if i % 8 == 3 else '')) for v, i in
+                   zip(line, range(len(line)))])
+    fout.write('Address 0X00000000: ' + ret + '\n')
+
 
 def split_chunks(L, n):
     for i in range(0, len(L), n):
-        yield L[i:i+n]
+        yield L[i:i + n]
+
 
 def min_max_to_scale_bias(minv, maxv):
     scale = (maxv - minv) / 255
     bias = minv
-    # print('scale:', scale, 'bias:', bias)
     return scale, bias
 
-# def q8(a, minv, maxv):
-#     scale = (maxv - minv) / 255
-#     bias = minv
-#     return (a - bias) / scale
-#
-# def debug_format(mid, fout=None):
-#     for ch in mid:
-#         if len(ch[0]) >= 32:
-#             for line in ch:
-#                 # line = np.array([*line, *([0]*(math.ceil(len(line)/64)*64-len(line)))])
-#                 lls = split_chunks(line, 64)
-#                 for ll in lls:
-#                     debug_format_line(ll, fout)
-#         elif len(ch[0]) >= 16:
-#             lines = list(split_chunks(ch, 2))
-#             for line in lines:
-#                 line = list(line)
-#                 pad = [0]*(32 - len(line[0]))
-#                 line.append(line[0])
-#                 ll = [*line[0], *pad, *line[1], *pad]
-#                 debug_format_line(ll, fout)
-#         else:
-#             lines = list(split_chunks(ch,4))
-#             for line in lines:
-#                 line = list(line)
-#                 pad = [0]*(16 - len(line[0]))
-#                 line.append(line[0])
-#                 line.append(line[0])
-#                 line.append(line[0])
-#                 ll = [*line[0], *pad, *line[1], *pad, *line[2], *pad, *line[3], *pad]
-#                 debug_format_line(ll, fout)
 
 
 def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
@@ -92,7 +54,6 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
         mino = ordered_x[0]
         maxo = ordered_x[-1]
-        # batch_y = klayer.conv.sess.run(tensor_out, klayer.conv.dataset)
     else:
         tensor_out = klayer.act.layer.tensor_activation
         batch_y = klayer.conv.sess.run(tensor_out, klayer.conv.dataset)
@@ -100,14 +61,10 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         mino = ordered_o[0]
         maxo = ordered_o[-1]
 
-    # qy = q8(batch_y, mino, maxo).round().astype('int')
-    # iy = qy[0].transpose([2,0,1])
     print("[layer {}]".format(idx), tensor_out.op.name, 'scale/bias:', *min_max_to_scale_bias(mino, maxo))
-    # with open('mid_data/'+tensor_out.name.replace('/', '_'), 'w') as fout:
-    #     debug_format(iy, fout)
 
-    img_input_size = int(math.ceil(io_arg['i_ch_num']/conv_arg['coef_group']) * 64 * conv_arg['channel_switch_addr'])
-    img_output_size = int(math.ceil(io_arg['o_ch_num']/io_arg['wb_group']) * 64 * io_arg['wb_channel_switch_addr'])
+    img_input_size = int(math.ceil(io_arg['i_ch_num'] / conv_arg['coef_group']) * 64 * conv_arg['channel_switch_addr'])
+    img_output_size = int(math.ceil(io_arg['o_ch_num'] / io_arg['wb_group']) * 64 * io_arg['wb_channel_switch_addr'])
 
     assert (img_input_size + img_output_size <= img_ram_size)
 
@@ -207,14 +164,14 @@ def gen_layer_list_struct(klayers: [layer_list_to_k210_layer.K210Layer]):
 
 
 def gen_layer_code(dlayer, idx):
-    return ('// '+str(idx)+'\n{\n' +
+    return ('// ' + str(idx) + '\n{\n' +
             ',\n'.join([
                 ' .' + reg_name + '.data = {\n' +
                 ',\n'.join([
                     '  .' + str(k) + ' = ' + (
                         str(v)
                         if str(k) not in ('bwsx_base_addr', 'para_start_addr', 'active_addr')
-                        else '0'  # '(uint64_t)' + str(k) + '_' + str(idx)
+                        else '0'
                     )
                     for k, v in data.items()
                 ]) + '\n }'
@@ -230,7 +187,8 @@ def gen_bn_code(dlayer, idx):
                      '.norm_add = ' + str(bn['norm_add']) + ', ' +
                      '.norm_shift = ' + str(bn['norm_shift']) +
                      '}}') for bn in bn_list]
-    return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(idx) + '[] __attribute__((aligned(128))) = {\n' + ',\n'.join(bn_code_list) + '\n};'
+    return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(
+        idx) + '[] __attribute__((aligned(128))) = {\n' + ',\n'.join(bn_code_list) + '\n};'
 
 
 def gen_act_code(dlayer, idx):
@@ -242,12 +200,13 @@ def gen_act_code(dlayer, idx):
         for item in act_list
     ]) + '\n }'
     bias_list = [item['y'] for item in act_list]
-    active_para_bias0 = (' .activate_para_bias0.data = {{\n' + \
-                         '  .result_bias = {{{},{},{},{},{},{},{},{}}}\n' + \
-                         ' }}').format(*(bias_list[:8]))
-    active_para_bias1 = (' .activate_para_bias1.data = {{\n' + \
-                         '  .result_bias = {{{},{},{},{},{},{},{},{}}}\n' + \
-                         ' }}').format(*(bias_list[8:]))
+    active_para_bias0 = (
+                ' .activate_para_bias0.data = {{\n  .result_bias = {{{},{},{},{},{},{},{},{}}}\n }}'
+    ).format(*(bias_list[:8]))
+
+    active_para_bias1 = (
+            ' .activate_para_bias1.data = {{\n  .result_bias = {{{},{},{},{},{},{},{},{}}}\n }}'
+    ).format(*(bias_list[8:]))
 
     return 'cnn_activate_table_t active_addr_' + str(idx) + ' __attribute__((aligned(128))) = {\n' + \
            ',\n'.join([active_para, active_para_bias0, active_para_bias1]) + \
@@ -261,7 +220,8 @@ def gen_weights_code(dlayer, idx):
         signed_to_hex(item, 16)
         for item, i in zip(weights, range(len(weights)))
     ])
-    return 'uint16_t para_start_addr_{idx}[] __attribute__((aligned(128))) = {{{data}}};'.format(idx=idx, data=weights_data)
+    return 'uint16_t para_start_addr_{idx}[] __attribute__((aligned(128))) = {{{data}}};'.format(idx=idx,
+                                                                                                 data=weights_data)
 
 
 def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer]):

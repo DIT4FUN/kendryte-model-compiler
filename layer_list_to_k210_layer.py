@@ -4,6 +4,10 @@ import tensor_list_to_layers
 import numpy as np
 
 
+def hotfix_magic_1():
+    return 100000000.0 / 3
+
+
 def log_next_pow_of_2(value):
     ret = 0
     while value > 1 or value <= -1:
@@ -53,66 +57,14 @@ class K210Conv:
         batch_w = self.sess.run(self.layer.tensor_conv_w, self.dataset)
         ordered_w = np.sort(np.reshape(batch_w, [np.product(batch_w.shape)]))
 
-        # # todo debug
-        # batch_y = self.sess.run(self.layer.tensor_conv_y, self.dataset)
-        # pass # debug
-
-        # if self.idx != 0:
-        #     batch_x = self.sess.run(self.layer.tensor_conv_x, self.dataset)
-        #     ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
-        #     x_min = ordered_x[0]
-        #     x_max = ordered_x[-1]
-        #     self.input_min = x_min
-        #     self.input_max = x_max
-
         self.x_range = self.input_max - self.input_min
         self.x_bias = self.input_min
         assert (self.x_range > 0)
-        # w_min = ordered_w[int(len(ordered_w) * 0.05)]
-        # w_max = ordered_w[int(len(ordered_w) * 0.95)]
         w_min = ordered_w[0]
         w_max = ordered_w[-1]
         self.w_range = w_max - w_min
         self.w_mean = w_min
         assert (self.w_range > 0)
-
-    # @staticmethod
-    # def weights_fill_buffer_33(weights, buf_size):
-    #     reorder = [[[[weights[w][h][i_ch][o_ch]
-    #                   for w in range(int(weights.shape[0]))]
-    #                  for h in range(int(weights.shape[1]))]
-    #                 for i_ch in range(int(weights.shape[2]))]
-    #                for o_ch in range(int(weights.shape[3]))]
-    #
-    #     weights_o_ch_list = [
-    #         np.array(o_ch_weights).flatten()
-    #         for o_ch_weights in reorder
-    #     ]
-    #
-    #     weights_shape = weights.shape
-    #     weight_size = 2
-    #     o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_size
-    #     n = math.floor(buf_size / o_ch_weights_size)
-    #     return K210Layer.batch(weights_o_ch_list, n)
-    #
-    # @staticmethod
-    # def weights_fill_buffer_11(weights, buf_size):
-    #     reorder = [[[[weights[w][h][i_ch][o_ch]
-    #                   for w in range(int(weights.shape[0]))]
-    #                  for h in range(int(weights.shape[1]))]
-    #                 for i_ch in range(int(weights.shape[2]))]
-    #                for o_ch in range(int(weights.shape[3]))]
-    #
-    #     weights_o_ch_list = [
-    #         [[*batch, None] for batch in K210Layer.batch(np.array(o_ch_weights).flatten(), 8)]
-    #         for o_ch_weights in reorder
-    #     ]
-    #
-    #     weights_shape = weights.shape
-    #     weight_size = 2
-    #     o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_size
-    #     n = math.floor(buf_size / o_ch_weights_size)
-    #     return K210Layer.batch(weights_o_ch_list, n)
 
     def to_k210(self):
         self.collection()
@@ -147,7 +99,7 @@ class K210Conv:
         i_col_high = int(input_shape[1])
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
         row_switch_addr = math.ceil(i_row_wid / 64)
-        channel_switch_addr = i_col_high * row_switch_addr #if coef_group == 1 else math.ceil(i_col_high / coef_group)
+        channel_switch_addr = i_col_high * row_switch_addr
         # conv
         depth_wise_layer = 1 if self.depth_wise_layer else 0
         kernel_type = {1: 0, 3: 1}[kernel_size]
@@ -163,15 +115,10 @@ class K210Conv:
         else:
             assert (None)
 
-
         para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
 
-        # if idx == 0:
-        #     bais_x, scale_x = (0, 1 / 256)
-        # else:
-        #     bais_x, scale_x = (self.x_bias, self.x_range / 256)
         bais_x, scale_x = (self.x_bias, self.x_range / 255)
 
         bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
@@ -200,11 +147,9 @@ class K210BN:
         return {'norm_mul': signed_to_hex(norm_mul, 24), 'norm_add': signed_to_hex(bias, 32), 'norm_shift': norm_shift}
 
     def to_k210(self, swsx=1):
-        __tmp_hotfix_magic = 100000000.0 / 3
-        scale = swsx * self.gamma / self.var * __tmp_hotfix_magic
-        bias = (self.beta - self.gamma * self.mean / self.var) * __tmp_hotfix_magic
+        scale = swsx * self.gamma / self.var * hotfix_magic_1()
+        bias = (self.beta - self.gamma * self.mean / self.var) * hotfix_magic_1()
 
-        # print('gamma', self.gamma, 'beta', self.beta, 'mean',self.mean, 'sigma', self.var, 'scale', scale, 'bias', bias)
         load_para = 1
         bwsx_base_addr = [
             self.get_bn(s, b)
@@ -239,7 +184,7 @@ class K210Act:
         y_table.append(max_y)
         y_table = sorted(y_table)
         x_table = [K210Act.leaky_relu_inverse(it) for it in y_table]
-        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table)-1)]
+        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table) - 1)]
         return zip(x_table, y_table, dydx)
 
     @staticmethod
@@ -249,7 +194,7 @@ class K210Act:
         y_table.append(0)
         y_table.append(max_y)
         y_table = sorted(y_table)
-        return zip(y_table, y_table, [1] * (len(y_table)-1))
+        return zip(y_table, y_table, [1] * (len(y_table) - 1))
 
     @staticmethod
     def find_shift(dydx):
@@ -262,8 +207,8 @@ class K210Act:
 
     @staticmethod
     def table_to_act(act_table, min_y, max_y):
-        __tmp_hotfix_magic = 100000000.0 / 3
-        act_table = [(0x800000000,0,0)]+[(x * __tmp_hotfix_magic, y, dydx / __tmp_hotfix_magic) for x, y, dydx in act_table]
+        act_table = [(0x800000000, 0, 0)] + [(x * hotfix_magic_1(), y, dydx / hotfix_magic_1()) for x, y, dydx in
+                                             act_table]
         scale_y = 255 / (max_y - min_y)
         bias_y = -min_y * scale_y
 
@@ -302,33 +247,7 @@ class K210Pool:
         self.sess = sess
         self.dataset = dataset
 
-
-
-
     def to_k210(self):
-        # debug todo
-        def q8(a, minv, maxv):
-            scale = (maxv - minv) / 255
-            bias = minv
-            return (a - bias) / scale
-
-        batch_y = self.sess.run(self.tensor, self.dataset)
-        batch_x = self.sess.run(self.tensor.op.inputs[0], self.dataset)
-
-        ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
-        minx = ordered_x[0]
-        maxx = ordered_x[-1]
-        np.set_printoptions(formatter={'int': hex})
-        batch_y = q8(batch_y, minx, maxx).round().astype('int')
-        batch_x = q8(batch_x, minx, maxx).round().astype('int')
-        iy = batch_y[0].transpose([2,0,1])
-        ix = batch_x[0].transpose([2,0,1])
-        # print("=============", self.tensor.name)
-        # with open('mid_data/'+self.tensor.name, 'w') as fout:
-        #     K210Pool.debug_format(iy, fout)
-        # print(iy[0][0][:16])
-        pass # debug
-
         if self.name == 'maxpool':
             return {'pool_type': {
                 (2, 2): 1,
@@ -370,11 +289,11 @@ class K210Layer:
         else:
             o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
 
-        if int(weights_shape[0])==1:
-            o_ch_weights_size_pad = math.ceil(o_ch_weights_size/8)*9
+        if int(weights_shape[0]) == 1:
+            o_ch_weights_size_pad = math.ceil(o_ch_weights_size / 8) * 9
         else:
             o_ch_weights_size_pad = o_ch_weights_size
-            assert(int(weights_shape[0])==3)
+            assert (int(weights_shape[0]) == 3)
 
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
 
@@ -388,7 +307,7 @@ class K210Layer:
         o_col_high = int(output_shape[1])
         wb_group = 1 if o_row_wid > 32 else (2 if o_row_wid > 16 else 4)
         wb_row_switch_addr = math.ceil(o_row_wid / 64)
-        wb_channel_switch_addr = o_col_high * wb_row_switch_addr #if wb_group == 1 else math.ceil(o_col_high / wb_group)
+        wb_channel_switch_addr = o_col_high * wb_row_switch_addr
         channel_byte_num = o_row_wid * o_col_high
 
         int_en = 0
@@ -407,7 +326,6 @@ def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset):
 
     net = buffer.pop()
     assert (isinstance(net, tensor_list_to_layers.LayerNet))
-    current_shape = int(net.config['width']), int(net.config['height']), int(net.config['channels'])
 
     while len(buffer) != 0:
         cur_k210 = K210Layer()
@@ -424,7 +342,6 @@ def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset):
         if isinstance(buffer[-1], tensor_list_to_layers.LayerConvolutional) \
                 or isinstance(buffer[-1], tensor_list_to_layers.LayerDepthwiseConvolutional):
             conv_layer = buffer.pop()
-            # assert (isinstance(conv_layer, level2_layers.LayerConvolutional))
             cur_k210.conv = K210Conv(conv_layer, sess, dataset, len(ret), last_min, last_max)
             if int(conv_layer.config['batch_normalize']) == 1:
                 cur_k210.bn = K210BN(
