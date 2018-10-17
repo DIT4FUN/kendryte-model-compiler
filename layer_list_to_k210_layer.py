@@ -33,7 +33,7 @@ def signed_to_hex(value, width):
 
 
 class K210Conv:
-    def __init__(self, layer, sess, dataset, idx, input_min, input_max):
+    def __init__(self, layer, sess, dataset, idx, weight_data_size, input_min, input_max):
         self.layer = layer
         self.depth_wise_layer = isinstance(layer, tensor_list_to_layers.LayerDepthwiseConvolutional)
         self.tensor = layer.tensor
@@ -42,6 +42,7 @@ class K210Conv:
         self.input_min = input_min
         self.input_max = input_max
         self.idx = idx
+        self.weight_data_size = weight_data_size
 
         self.x_range = None
         self.x_bias = None
@@ -75,7 +76,6 @@ class K210Conv:
         input_shape = self.layer.tensor_conv_x.shape
         weights_shape = self.layer.tensor_conv_w.shape
         img_data_size = 1
-        weight_data_size = 2
         img_line_size = 64
         img_memory_size = 1024 * 1024 * 2
         weight_cache_row_size = 9 * 2
@@ -88,7 +88,7 @@ class K210Conv:
         output_channel_size = int(input_shape[1]) * output_row_size
         output_all_size = int(input_shape[3]) * output_channel_size
         kernel_size = int(weights_shape[0])
-        weight_kernel_size = kernel_size * kernel_size * weight_data_size
+        weight_kernel_size = kernel_size * kernel_size * self.weight_data_size
 
         weight_all_size = weight_kernel_size * int(weights_shape[2]) * int(weights_shape[3])
 
@@ -121,7 +121,7 @@ class K210Conv:
 
         bais_x, scale_x = (self.x_bias, self.x_range / 255)
 
-        bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
+        bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * self.weight_data_size))
         bx_div_sx = bais_x / scale_x
         bw_div_sw = bais_w / scale_w
 
@@ -319,7 +319,9 @@ class K210Layer:
         return locals()
 
 
-def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset):
+def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset, weight_data_size_list = None):
+    weight_data_size_list = weight_data_size_list or [2]*len(layers)
+    assert(len(layers), len(weight_data_size_list))
     buffer = list(layers)
     buffer.reverse()
     ret = []
@@ -342,7 +344,8 @@ def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset):
         if isinstance(buffer[-1], tensor_list_to_layers.LayerConvolutional) \
                 or isinstance(buffer[-1], tensor_list_to_layers.LayerDepthwiseConvolutional):
             conv_layer = buffer.pop()
-            cur_k210.conv = K210Conv(conv_layer, sess, dataset, len(ret), last_min, last_max)
+            idx = len(ret)
+            cur_k210.conv = K210Conv(conv_layer, sess, dataset, idx, weight_data_size_list[idx], last_min, last_max)
             if int(conv_layer.config['batch_normalize']) == 1:
                 cur_k210.bn = K210BN(
                     conv_layer.batch_normalize_moving_mean,
