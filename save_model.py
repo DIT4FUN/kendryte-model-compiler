@@ -1,9 +1,9 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import build_node_tree
-import level1_convert
-import level2_layers
-import level3_gen_file
+import tensor_head_to_tensor_list
+import tensor_list_to_layers
+import layer_list_to_darknet
 
 
 def build_model(config_input_width, config_input_height, config_input_channel, config_batch_size):
@@ -168,12 +168,12 @@ def main():
         # for var in tf.all_variables():
         #     print('[all]', var.name, var.shape)
 
-        converter = level1_convert.GraphConverter(net)
-        converter.convert_all()
-        layers = level2_layers.make_layers(sess, converter.dst)
+        converter = tensor_head_to_tensor_list.PbConverter(net)
+        converter.convert()
+        layers = tensor_list_to_layers.convert_to_layers(sess, converter.dst)
 
-        print(level3_gen_file.gen_config_file(layers))
-        weights = level3_gen_file.gen_weights(layers)
+        print(layer_list_to_darknet.gen_config_file(layers))
+        weights = layer_list_to_darknet.gen_weights(layers)
         print(len(weights))
 
     print(net.graph)

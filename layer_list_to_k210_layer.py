@@ -1,6 +1,6 @@
 import math
 
-import level2_layers
+import tensor_list_to_layers
 import numpy as np
 
 
@@ -31,7 +31,7 @@ def signed_to_hex(value, width):
 class K210Conv:
     def __init__(self, layer, sess, dataset, idx, input_min, input_max):
         self.layer = layer
-        self.depth_wise_layer = isinstance(layer, level2_layers.LayerDepthwiseConvolutional)
+        self.depth_wise_layer = isinstance(layer, tensor_list_to_layers.LayerDepthwiseConvolutional)
         self.tensor = layer.tensor
         self.sess = sess
         self.dataset = dataset
@@ -400,13 +400,13 @@ class K210Layer:
         return locals()
 
 
-def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
+def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset):
     buffer = list(layers)
     buffer.reverse()
     ret = []
 
     net = buffer.pop()
-    assert (isinstance(net, level2_layers.LayerNet))
+    assert (isinstance(net, tensor_list_to_layers.LayerNet))
     current_shape = int(net.config['width']), int(net.config['height']), int(net.config['channels'])
 
     while len(buffer) != 0:
@@ -421,8 +421,8 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
             last_min = 0
             last_max = 1
 
-        if isinstance(buffer[-1], level2_layers.LayerConvolutional) \
-                or isinstance(buffer[-1], level2_layers.LayerDepthwiseConvolutional):
+        if isinstance(buffer[-1], tensor_list_to_layers.LayerConvolutional) \
+                or isinstance(buffer[-1], tensor_list_to_layers.LayerDepthwiseConvolutional):
             conv_layer = buffer.pop()
             # assert (isinstance(conv_layer, level2_layers.LayerConvolutional))
             cur_k210.conv = K210Conv(conv_layer, sess, dataset, len(ret), last_min, last_max)
@@ -439,9 +439,9 @@ def gen_k210_layers(layers: [level2_layers.LayerBase], sess, dataset):
 
             cur_k210.act = K210Act(conv_layer, sess, dataset, conv_layer.config['activation'])
 
-        if len(buffer) > 0 and isinstance(buffer[-1], level2_layers.LayerMaxpool):
+        if len(buffer) > 0 and isinstance(buffer[-1], tensor_list_to_layers.LayerMaxpool):
             pool_layer = buffer.pop()
-            assert (isinstance(pool_layer, level2_layers.LayerMaxpool))
+            assert (isinstance(pool_layer, tensor_list_to_layers.LayerMaxpool))
             cur_k210.pool = K210Pool(pool_layer, 'maxpool', pool_layer.config['size'], pool_layer.config['stride'],
                                      sess, dataset)
 

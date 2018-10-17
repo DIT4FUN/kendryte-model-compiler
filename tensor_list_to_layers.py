@@ -200,7 +200,7 @@ class LayerMaxpool(LayerBase):
         self.config['stride'] = max_pool.op.get_attr('strides')[1]
 
 
-def make_layer(sess, info):
+def convert_layer(sess, info):
     ty = info[0]
     info = info[1:]
     if ty == 'net':
@@ -215,6 +215,6 @@ def make_layer(sess, info):
         print('unknown type:', ty)
 
 
-def make_layers(sess, info_list):
+def convert_to_layers(sess, info_list):
     info_list.reverse()
-    return [make_layer(sess, info) for info in info_list]
+    return [convert_layer(sess, info) for info in info_list]

@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-class GraphConverter:
+class PbConverter:
     def __init__(self, target: tf.Tensor):
         self.src = target
         self.dst = []
@@ -127,6 +127,6 @@ class GraphConverter:
             print('convert done.')
         return False
 
-    def convert_all(self):
+    def convert(self):
         while self.convert_step():
             pass

@@ -1,11 +1,11 @@
-import level2_layers
+import tensor_list_to_layers
 import numpy
 
 
 def gen_config_file(layers):
     ret = []
     for layer in layers:
-        assert (isinstance(layer, level2_layers.LayerBase))
+        assert (isinstance(layer, tensor_list_to_layers.LayerBase))
         ret.append('[' + layer.name + ']')
         for k, v in layer.config.items():
             ret.append(str(k) + '=' + str(v))
@@ -18,14 +18,14 @@ def gen_weights(layers):
     ret = [numpy.array([0, 2, 0, 0], 'int32').tobytes()]  # header
 
     for layer in layers:
-        assert (isinstance(layer, level2_layers.LayerBase))
+        assert (isinstance(layer, tensor_list_to_layers.LayerBase))
         if type(layer) in (
-                level2_layers.LayerNet,
-                level2_layers.LayerMaxpool
+                tensor_list_to_layers.LayerNet,
+                tensor_list_to_layers.LayerMaxpool
         ):
             pass
-        elif isinstance(layer, level2_layers.LayerConvolutional) or \
-                isinstance(layer, level2_layers.LayerDepthwiseConvolutional):
+        elif isinstance(layer, tensor_list_to_layers.LayerConvolutional) or \
+                isinstance(layer, tensor_list_to_layers.LayerDepthwiseConvolutional):
             if str(layer.config['batch_normalize']) != '0':
                 gamma = numpy.array(layer.batch_normalize_gamma, 'float32')
                 beta = numpy.array(layer.batch_normalize_beta, 'float32')
