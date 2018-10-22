@@ -42,7 +42,7 @@ class K210Conv:
         self.input_min = input_min
         self.input_max = input_max
         self.idx = idx
-        self.weight_data_size = 1 if eight_bit_mode else 2
+        self.eight_bit_mode = eight_bit_mode
 
         self.x_range = None
         self.x_bias = None
@@ -67,15 +67,16 @@ class K210Conv:
         self.w_mean = w_min
         assert (self.w_range > 0)
 
-    def para_mult_loads(self, weights_shape, output_shape, kernel_size, i_col_high):
+    def para_mult_loads(self, weights_shape, output_shape, kernel_size):
         weight_buffer_size = 2 * 9 * 4096
         weights_ich = int(weights_shape[2])
         weights_och = int(weights_shape[3])
+        weight_data_size =  1 if self.eight_bit_mode else 2
 
         if self.depth_wise_layer:
-            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * self.weight_data_size
+            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * weight_data_size
         else:
-            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * self.weight_data_size
+            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
 
         if int(weights_shape[0]) == 1:
             o_ch_weights_size_pad = math.ceil(o_ch_weights_size / 8) * 9
@@ -91,7 +92,18 @@ class K210Conv:
             load_time = None
             assert (None)
 
-        o_ch_num_coef = min(math.floor(weight_buffer_size / o_ch_weights_size_pad), int(output_shape[3]))
+        o_ch_num = int(output_shape[3])
+        o_ch_num_coef = min(math.floor(weight_buffer_size / o_ch_weights_size_pad), o_ch_num)
+
+        if self.eight_bit_mode:
+            while load_time % 2 != 1:
+                if o_ch_num_coef <= 0:
+                    assert('cannot fix load_time to 2n+1')
+
+                o_ch_num_coef = o_ch_num_coef - 1
+                load_time = math.ceil(o_ch_num/o_ch_num_coef)
+
+
         para_size = o_ch_num_coef * o_ch_weights_size
         return load_time, para_size, o_ch_num_coef
 
@@ -107,6 +119,7 @@ class K210Conv:
         img_data_size = 1
         img_line_size = 64
         img_memory_size = 1024 * 1024 * 2
+        weight_data_size = 1 if self.eight_bit_mode else 2
         weight_cache_row_size = 9 * 2
         weight_cache_mem_size = weight_cache_row_size * 64
 
@@ -117,7 +130,7 @@ class K210Conv:
         output_channel_size = int(input_shape[1]) * output_row_size
         output_all_size = int(input_shape[3]) * output_channel_size
         kernel_size = int(weights_shape[0])
-        weight_kernel_size = kernel_size * kernel_size * self.weight_data_size
+        weight_kernel_size = kernel_size * kernel_size * weight_data_size
 
         weight_all_size = weight_kernel_size * int(weights_shape[2]) * int(weights_shape[3])
 
@@ -140,11 +153,11 @@ class K210Conv:
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
 
-        load_time, para_size, o_ch_num_coef = self.para_mult_loads(weights_shape, output_shape, kernel_size, i_col_high)
+        load_time, para_size, o_ch_num_coef = self.para_mult_loads(weights_shape, output_shape, kernel_size)
 
         bais_x, scale_x = (self.x_bias, self.x_range / 255)
 
-        bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * self.weight_data_size))
+        bais_w, scale_w = self.w_mean, self.w_range / (1 << (8 * weight_data_size))
         bx_div_sx = bais_x / scale_x
         bw_div_sw = bais_w / scale_w
 
