@@ -33,7 +33,7 @@ def signed_to_hex(value, width):
 
 
 class K210Conv:
-    def __init__(self, layer, sess, dataset, idx, weight_data_size, input_min, input_max):
+    def __init__(self, layer, sess, dataset, idx, eight_bit_mode, input_min, input_max):
         self.layer = layer
         self.depth_wise_layer = isinstance(layer, tensor_list_to_layer_list.LayerDepthwiseConvolutional)
         self.tensor = layer.tensor
@@ -42,7 +42,7 @@ class K210Conv:
         self.input_min = input_min
         self.input_max = input_max
         self.idx = idx
-        self.weight_data_size = weight_data_size
+        self.weight_data_size = 1 if eight_bit_mode else 2
 
         self.x_range = None
         self.x_bias = None
@@ -67,14 +67,10 @@ class K210Conv:
         self.w_mean = w_min
         assert (self.w_range > 0)
 
-    def to_k210(self):
-        self.collection()
+    def para_mult_loads(self, weights_shape, output_shape, kernel_size, i_col_high):
         weight_buffer_size = 2 * 9 * 4096
-        weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65535
-        weights = self.layer.weights
-        input_shape = self.layer.tensor_conv_x.shape
-        output_shape = self.layer.tensor_conv_y.shape
-        weights_shape = self.layer.tensor_conv_w.shape
+        weights_ich = int(weights_shape[2])
+        weights_och = int(weights_shape[3])
 
         if self.depth_wise_layer:
             o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * self.weight_data_size
@@ -86,6 +82,27 @@ class K210Conv:
         else:
             o_ch_weights_size_pad = o_ch_weights_size
             assert (int(weights_shape[0]) == 3)
+
+        if kernel_size == 3:
+            load_time = math.ceil(weights_och / math.floor(4096 / weights_ich))
+        elif kernel_size == 1:
+            load_time = math.ceil(weights_och / math.floor(4096 * 8 / weights_ich))
+        else:
+            load_time = None
+            assert (None)
+
+        o_ch_num_coef = min(math.floor(weight_buffer_size / o_ch_weights_size_pad), int(output_shape[3]))
+        para_size = o_ch_num_coef * o_ch_weights_size
+        return load_time, para_size, o_ch_num_coef
+
+    def to_k210(self):
+        self.collection()
+        weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65535
+        weights = self.layer.weights
+        input_shape = self.layer.tensor_conv_x.shape
+        output_shape = self.layer.tensor_conv_y.shape
+        weights_shape = self.layer.tensor_conv_w.shape
+
 
         img_data_size = 1
         img_line_size = 64
@@ -104,6 +121,8 @@ class K210Conv:
 
         weight_all_size = weight_kernel_size * int(weights_shape[2]) * int(weights_shape[3])
 
+        para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
+
         # exports:
         bypass_conv = 0
         # img i
@@ -117,21 +136,11 @@ class K210Conv:
         kernel_type = {1: 0, 3: 1}[kernel_size]
         pad_type = 0
         load_coor = 1
-        weights_ich = int(weights_shape[2])
-        weights_och = int(weights_shape[3])
 
-        if kernel_size == 3:
-            load_time = math.ceil(weights_och / math.floor(4096 / weights_ich))
-        elif kernel_size == 1:
-            load_time = math.ceil(weights_och / math.floor(4096 * 8 / weights_ich))
-        else:
-            assert (None)
-
-        para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
-        o_ch_num_coef = min(math.floor(weight_buffer_size / o_ch_weights_size_pad), int(output_shape[3]))
-        para_size = o_ch_num_coef * o_ch_weights_size
+
+        load_time, para_size, o_ch_num_coef = self.para_mult_loads(weights_shape, output_shape, kernel_size, i_col_high)
 
         bais_x, scale_x = (self.x_bias, self.x_range / 255)
 
@@ -319,9 +328,7 @@ class K210Layer:
         return locals()
 
 
-def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset, weight_data_size_list = None):
-    weight_data_size_list = weight_data_size_list or [2]*len(layers)
-    assert(len(layers), len(weight_data_size_list))
+def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset, eight_bit_mode = False):
     buffer = list(layers)
     buffer.reverse()
     ret = []
@@ -345,7 +352,7 @@ def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset
                 or isinstance(buffer[-1], tensor_list_to_layer_list.LayerDepthwiseConvolutional):
             conv_layer = buffer.pop()
             idx = len(ret)
-            cur_k210.conv = K210Conv(conv_layer, sess, dataset, idx, weight_data_size_list[idx], last_min, last_max)
+            cur_k210.conv = K210Conv(conv_layer, sess, dataset, idx, eight_bit_mode, last_min, last_max)
             if int(conv_layer.config['batch_normalize']) == 1:
                 cur_k210.bn = K210BN(
                     conv_layer.batch_normalize_moving_mean,
