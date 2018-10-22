@@ -103,6 +103,7 @@ class K210Conv:
                 o_ch_num_coef = o_ch_num_coef - 1
                 load_time = math.ceil(o_ch_num/o_ch_num_coef)
 
+        assert(load_time<=64)
 
         para_size = o_ch_num_coef * o_ch_weights_size
         return load_time, para_size, o_ch_num_coef
