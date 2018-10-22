@@ -224,7 +224,7 @@ def gen_weights_code(dlayer, idx):
                                                                                                  data=weights_data)
 
 
-def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer]):
+def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit_mode):
     structs = gen_layer_list_struct(klayers)
 
     header_part = '#include "cnn.h"'
@@ -239,6 +239,7 @@ def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer]):
             for idx in range(len(structs))
         ]),
         ' task->layers = la;',
+        ' task->eight_bit_mode = {};'.format(str(1 if eight_bit_mode else 0)),
         ' return task;',
         '}'
     ])

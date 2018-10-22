@@ -294,11 +294,12 @@ class K210Pool:
 
 
 class K210Layer:
-    def __init__(self):
+    def __init__(self, eight_bit_mode):
         self.conv = None
         self.bn = None
         self.act = None
         self.pool = None
+        self.eight_bit_mode = eight_bit_mode
 
     @staticmethod
     def batch(iter, n=1):
@@ -350,7 +351,7 @@ def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset
     assert (isinstance(net, tensor_list_to_layer_list.LayerNet))
 
     while len(buffer) != 0:
-        cur_k210 = K210Layer()
+        cur_k210 = K210Layer(eight_bit_mode)
         cur_k210.input_shape = buffer[-1].tensor[0].shape
         if len(ret) > 0:
             last_act = ret[-1].act

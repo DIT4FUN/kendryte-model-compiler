@@ -48,25 +48,28 @@ def box_image(im_path, new_h, new_w):
 
     return box_im, resized
 
-
-def main():
-    t = load_graph("graph_yv2_DW.pb", 'yv2')
-
+def convert(tensor_head, dataset_pack, eight_bit_mode=False):
     with tf.Session() as sess:
-        converter = tensor_head_to_tensor_list.PbConverter(t)
+        converter = tensor_head_to_tensor_list.PbConverter(tensor_head)
         converter.convert()
         layers = tensor_list_to_layer_list.convert_to_layers(sess, converter.dst)
-        dataset = np.array([box_image(path, 240, 320)[0].tolist() for path in
-                            # ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')
-                            ('pic/dog.bmp', )
-                            ])
-        k210_layers = layer_list_to_k210_layer.gen_k210_layers(layers, sess, {'input:0': dataset})
+        k210_layers = layer_list_to_k210_layer.gen_k210_layers(layers, sess, dataset_pack, eight_bit_mode)
 
-        code = k210_layer_to_c_code.gen_layer_list_code(k210_layers)
-        with open('gencode_output.c', 'w') as of:
+        code = k210_layer_to_c_code.gen_layer_list_code(k210_layers, eight_bit_mode)
+        return code
+
+
+def main():
+    tensor_head = load_graph("graph_yv2_DW.pb", 'yv2')
+    eight_bit_mode = False
+    dataset = np.array([box_image(path, 240, 320)[0].tolist() for path in
+                        # ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')
+                        ('pic/dog.bmp', )
+                        ])
+
+    code = convert(tensor_head, {'input:0': dataset}, eight_bit_mode)
+
+    with open('gencode_output.c', 'w') as of:
             of.write(code)
-
-        pass
-
 
 main()
