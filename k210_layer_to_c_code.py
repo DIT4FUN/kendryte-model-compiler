@@ -81,7 +81,7 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
     image_channel_num = {
         'i_ch_num': hex(io_arg['i_ch_num'] - 1),
         'o_ch_num': hex(io_arg['o_ch_num'] - 1),
-        'o_ch_num_coef': hex(io_arg['o_ch_num_coef'] - 1),
+        'o_ch_num_coef': hex(conv_arg['o_ch_num_coef'] - 1),
     }
     image_size = {
         'i_row_wid': hex(conv_arg['i_row_wid'] - 1),
@@ -103,7 +103,7 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
     kernel_load_cfg = {
         'load_coor': conv_arg['load_coor'],
         'load_time': conv_arg['load_time'] - 1,
-        'para_size': io_arg['para_size'],
+        'para_size': conv_arg['para_size'],
         'para_start_addr': conv_arg['para_start_addr'],
     }
     kernel_offset = {

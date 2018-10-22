@@ -72,9 +72,21 @@ class K210Conv:
         weight_buffer_size = 2 * 9 * 4096
         weight_q = np.transpose(self.q(self.layer.weights, self.w_range, self.w_mean), [3, 2, 0, 1]) * 65535
         weights = self.layer.weights
-
         input_shape = self.layer.tensor_conv_x.shape
+        output_shape = self.layer.tensor_conv_y.shape
         weights_shape = self.layer.tensor_conv_w.shape
+
+        if self.depth_wise_layer:
+            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * self.weight_data_size
+        else:
+            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * self.weight_data_size
+
+        if int(weights_shape[0]) == 1:
+            o_ch_weights_size_pad = math.ceil(o_ch_weights_size / 8) * 9
+        else:
+            o_ch_weights_size_pad = o_ch_weights_size
+            assert (int(weights_shape[0]) == 3)
+
         img_data_size = 1
         img_line_size = 64
         img_memory_size = 1024 * 1024 * 2
@@ -118,6 +130,8 @@ class K210Conv:
         para_start_addr = [int(round(item)) for item in np.reshape(weight_q, (np.product(weight_q.shape),))]
         first_stride = 0 if self.layer.config['stride'] == 1 else 1
         assert (256 > (i_col_high if first_stride == 0 else i_col_high / 2))
+        o_ch_num_coef = min(math.floor(weight_buffer_size / o_ch_weights_size_pad), int(output_shape[3]))
+        para_size = o_ch_num_coef * o_ch_weights_size
 
         bais_x, scale_x = (self.x_bias, self.x_range / 255)
 
@@ -279,29 +293,15 @@ class K210Layer:
         weights_shape = self.conv.layer.tensor_conv_w.shape
         input_shape = self.conv.layer.tensor_conv_x.shape
         i_row_wid = int(input_shape[1])
-        weight_data_size = 2
         img_data_size = 1
-        img_line_size = 64
-        buf_size = 4096 * 3 * 3 * weight_data_size
+        img_line_size = 64 # todo remove
 
-        if self.conv.depth_wise_layer:
-            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * weight_data_size
-        else:
-            o_ch_weights_size = int(weights_shape[0]) * int(weights_shape[1]) * int(weights_shape[2]) * weight_data_size
-
-        if int(weights_shape[0]) == 1:
-            o_ch_weights_size_pad = math.ceil(o_ch_weights_size / 8) * 9
-        else:
-            o_ch_weights_size_pad = o_ch_weights_size
-            assert (int(weights_shape[0]) == 3)
 
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
 
         # io
         i_ch_num = int(weights_shape[2])
         o_ch_num = int(output_shape[3])
-        o_ch_num_coef = min(math.floor(buf_size / o_ch_weights_size_pad), int(output_shape[3]))
-        para_size = o_ch_num_coef * o_ch_weights_size
         # img o
         o_row_wid = int(output_shape[2])
         o_col_high = int(output_shape[1])
