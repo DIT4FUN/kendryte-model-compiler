@@ -1,6 +1,6 @@
 import math
 
-import tensor_list_to_layers
+import tensor_list_to_layer_list
 import numpy as np
 
 
@@ -35,7 +35,7 @@ def signed_to_hex(value, width):
 class K210Conv:
     def __init__(self, layer, sess, dataset, idx, weight_data_size, input_min, input_max):
         self.layer = layer
-        self.depth_wise_layer = isinstance(layer, tensor_list_to_layers.LayerDepthwiseConvolutional)
+        self.depth_wise_layer = isinstance(layer, tensor_list_to_layer_list.LayerDepthwiseConvolutional)
         self.tensor = layer.tensor
         self.sess = sess
         self.dataset = dataset
@@ -319,7 +319,7 @@ class K210Layer:
         return locals()
 
 
-def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset, weight_data_size_list = None):
+def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset, weight_data_size_list = None):
     weight_data_size_list = weight_data_size_list or [2]*len(layers)
     assert(len(layers), len(weight_data_size_list))
     buffer = list(layers)
@@ -327,7 +327,7 @@ def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset, we
     ret = []
 
     net = buffer.pop()
-    assert (isinstance(net, tensor_list_to_layers.LayerNet))
+    assert (isinstance(net, tensor_list_to_layer_list.LayerNet))
 
     while len(buffer) != 0:
         cur_k210 = K210Layer()
@@ -341,8 +341,8 @@ def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset, we
             last_min = 0
             last_max = 1
 
-        if isinstance(buffer[-1], tensor_list_to_layers.LayerConvolutional) \
-                or isinstance(buffer[-1], tensor_list_to_layers.LayerDepthwiseConvolutional):
+        if isinstance(buffer[-1], tensor_list_to_layer_list.LayerConvolutional) \
+                or isinstance(buffer[-1], tensor_list_to_layer_list.LayerDepthwiseConvolutional):
             conv_layer = buffer.pop()
             idx = len(ret)
             cur_k210.conv = K210Conv(conv_layer, sess, dataset, idx, weight_data_size_list[idx], last_min, last_max)
@@ -359,9 +359,9 @@ def gen_k210_layers(layers: [tensor_list_to_layers.LayerBase], sess, dataset, we
 
             cur_k210.act = K210Act(conv_layer, sess, dataset, conv_layer.config['activation'])
 
-        if len(buffer) > 0 and isinstance(buffer[-1], tensor_list_to_layers.LayerMaxpool):
+        if len(buffer) > 0 and isinstance(buffer[-1], tensor_list_to_layer_list.LayerMaxpool):
             pool_layer = buffer.pop()
-            assert (isinstance(pool_layer, tensor_list_to_layers.LayerMaxpool))
+            assert (isinstance(pool_layer, tensor_list_to_layer_list.LayerMaxpool))
             cur_k210.pool = K210Pool(pool_layer, 'maxpool', pool_layer.config['size'], pool_layer.config['stride'],
                                      sess, dataset)
 

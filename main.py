@@ -5,7 +5,7 @@ from PIL import Image
 from tensorflow.python.platform import gfile
 
 import tensor_head_to_tensor_list
-import tensor_list_to_layers
+import tensor_list_to_layer_list
 import layer_list_to_k210_layer
 import k210_layer_to_c_code
 
@@ -55,7 +55,7 @@ def main():
     with tf.Session() as sess:
         converter = tensor_head_to_tensor_list.PbConverter(t)
         converter.convert()
-        layers = tensor_list_to_layers.convert_to_layers(sess, converter.dst)
+        layers = tensor_list_to_layer_list.convert_to_layers(sess, converter.dst)
         dataset = np.array([box_image(path, 240, 320)[0].tolist() for path in
                             # ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')
                             ('pic/dog.bmp', )
