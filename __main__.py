@@ -63,14 +63,14 @@ def convert(tensor_head, dataset_pack, eight_bit_mode=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pb_path', nargs=1, default='graph_yv2_DW.pb')
-    parser.add_argument('--tensor_head_name', nargs=1, default='yv2')
-    parser.add_argument('--dataset_input_name', nargs=1, default='input:0')
-    parser.add_argument('--dataset_pic_path', nargs=1, default='pic/dog.bmp')
-    parser.add_argument('--image_w', nargs=1, type=int, default=320)
-    parser.add_argument('--image_h', nargs=1, type=int, default=240)
-    parser.add_argument('--eight_bit_mode', nargs=1, type=bool, default=False)
-    parser.add_argument('--output_path', nargs=1, default='gencode_output.c')
+    parser.add_argument('--pb_path', type=str, default='pb_files/graph_yv2_DW.pb')
+    parser.add_argument('--tensor_head_name', default='yv2')
+    parser.add_argument('--dataset_input_name', default='input:0')
+    parser.add_argument('--dataset_pic_path', default='pic/dog.bmp')
+    parser.add_argument('--image_w', type=int, default=320)
+    parser.add_argument('--image_h', type=int, default=240)
+    parser.add_argument('--eight_bit_mode', type=bool, default=False)
+    parser.add_argument('--output_path', default='build/gencode_output.c')
     args = parser.parse_args()
 
     pb_path = args.pb_path
