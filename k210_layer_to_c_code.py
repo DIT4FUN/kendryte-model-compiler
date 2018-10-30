@@ -13,8 +13,11 @@ default_pool_arg = {
 }
 
 
+def q(value, ranges, mean):
+    return (value - mean) / ranges
+
 def signed_to_hex(value, width):
-    return hex(int((1 << width) + value) % (1 << width))
+    return hex(int(round((1 << width) + value)) % (1 << width))
 
 
 def debug_format_line(line, fout):
@@ -52,6 +55,7 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         tensor_pre_out = klayer.pool.tensor.op.inputs[0]
         batch_x = klayer.conv.sess.run(tensor_pre_out, klayer.conv.dataset)
         ordered_x = np.sort(np.reshape(batch_x, [np.product(batch_x.shape)]))
+        batch_y = klayer.conv.sess.run(tensor_out, klayer.conv.dataset)
         mino = ordered_x[0]
         maxo = ordered_x[-1]
     else:
@@ -61,7 +65,17 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         mino = ordered_o[0]
         maxo = ordered_o[-1]
 
+    #debug todo
+    convy = klayer.conv.sess.run(klayer.conv.layer.tensor_conv_y, klayer.conv.dataset).transpose([0,3,1,2])
+    convy_min = min(convy.flatten())
+    convy_max = max(convy.flatten())
+    convyq = q(convy, *min_max_to_scale_bias(convy_min, convy_max))
+    # bny = klayer.conv.sess.run(klayer.conv.layer.tensor_bn, klayer.conv.dataset).transpose([0,3,1,2]).flatten()
+
     print("[layer {}]".format(idx), tensor_out.op.name, 'scale/bias:', *min_max_to_scale_bias(mino, maxo))
+    scaley, biasy = min_max_to_scale_bias(mino, maxo)
+    qy = (batch_y.transpose([0,3,1,2]) - biasy)/scaley
+    print(repr(qy[0,0,0,:40]))
 
     img_input_size = int(math.ceil(io_arg['i_ch_num'] / conv_arg['coef_group']) * 64 * conv_arg['channel_switch_addr'])
     img_output_size = int(math.ceil(io_arg['o_ch_num'] / io_arg['wb_group']) * 64 * io_arg['wb_channel_switch_addr'])
@@ -199,7 +213,7 @@ def gen_act_code(dlayer, idx):
         )
         for item in act_list
     ]) + '\n }'
-    bias_list = [item['y'] for item in act_list]
+    bias_list = [int(item['y']) for item in act_list]
     active_para_bias0 = (
                 ' .activate_para_bias0.data = {{\n  .result_bias = {{{},{},{},{},{},{},{},{}}}\n }}'
     ).format(*(bias_list[:8]))
@@ -213,15 +227,16 @@ def gen_act_code(dlayer, idx):
            '\n};'
 
 
-def gen_weights_code(dlayer, idx):
+def gen_weights_code(dlayer, idx, eight_bit_mode):
     weights = dlayer['kernel_load_cfg']['para_start_addr']
     weights_data = ', '.join([
         ('\n' if i % 64 == 0 else '') +
-        signed_to_hex(item, 16)
+        signed_to_hex(item, 8 if eight_bit_mode else 16)
         for item, i in zip(weights, range(len(weights)))
     ])
-    return 'uint16_t para_start_addr_{idx}[] __attribute__((aligned(128))) = {{{data}}};'.format(idx=idx,
-                                                                                                 data=weights_data)
+    para_type = 'uint8_t' if eight_bit_mode else 'uint16_t'
+    return para_type + \
+           ' para_start_addr_{idx}[] __attribute__((aligned(128))) = {{{data}}};'.format(idx=idx, data=weights_data)
 
 
 def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit_mode):
@@ -260,7 +275,7 @@ def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit
     ]
 
     weights_part = [
-        gen_weights_code(layer, idx)
+        gen_weights_code(layer, idx, eight_bit_mode)
         for layer, idx in zip(structs, range(len(structs)))
     ]
 

@@ -42,33 +42,34 @@ class LayerConvolutional(LayerBase):
         self.bias = None
         batch_norm = None
         activation = None
-        bais_add = None
+        bias_add = None
         bn_add, bn_sub, bn_div, bn_mul = None, None, None, None
+        leaky_reul_max = None
 
         if self.type_match(info, ['Add', 'Conv2D']):
-            bais_add, conv2d = info
+            bias_add, conv2d = info
         elif self.type_match(info, ['BiasAdd', 'Conv2D']):
-            bais_add, conv2d = info
+            bias_add, conv2d = info
         elif self.type_match(info, ['Relu', 'BiasAdd', 'Conv2D']):
-            activation, bais_add, conv2d = info
+            activation, bias_add, conv2d = info
         elif self.type_match(info, ['LeakyRelu', 'BiasAdd', 'Conv2D']):
-            activation, bais_add, conv2d = info
+            activation, bias_add, conv2d = info
         elif self.type_match(info, ['Maximum', 'Mul', 'BiasAdd', 'Conv2D']):
-            leaky_reul_max, leaky_reul_mul, bais_add, conv2d = info
+            leaky_reul_max, leaky_reul_mul, bias_add, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Relu6', 'BiasAdd', 'Conv2D']):
-            activation, bais_add, conv2d = info
+            activation, bias_add, conv2d = info
         elif self.type_match(info, ['Relu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
-            activation, batch_norm, bais_add, conv2d = info
+            activation, batch_norm, bias_add, conv2d = info
         elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
-            leaky_reul_max, leaky_reul_mul, batch_norm, bais_add, conv2d = info
+            leaky_reul_max, leaky_reul_mul, batch_norm, bias_add, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Mul', 'RealDiv', 'Sub', 'Conv2D']):
             leaky_reul_max, leaky_reul_mul, bn_add, bn_mul, bn_div, bn_sub, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
             batch_norm = [bn_add, bn_mul, bn_div, bn_sub]
         elif self.type_match(info, ['Relu6', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
-            activation, batch_norm, bais_add, conv2d = info
+            activation, batch_norm, bias_add, conv2d = info
         else:
             print('not supported convolutional info.')
             return
@@ -78,7 +79,8 @@ class LayerConvolutional(LayerBase):
         self.tensor_conv_w = conv2d.op.inputs[1]
         self.tensor_conv_x = conv2d.op.inputs[0]
         self.tensor_conv_y = conv2d
-        self.tensor_activation = activation or batch_norm or bais_add
+        self.tensor_bn = bn_add if bn_add is not None else batch_norm
+        self.tensor_activation = activation or batch_norm or bias_add
 
         assert (isinstance(conv2d, tf.Tensor))
         self.config['size'] = int(conv2d.op.inputs[1].shape[0])
@@ -95,8 +97,8 @@ class LayerConvolutional(LayerBase):
             self.config['activation'] = 'linear'
 
         self.weights = sess.run(conv2d.op.inputs[1])
-        if bais_add is not None:
-            self.bias = sess.run(bais_add.op.inputs[1])
+        if bias_add is not None:
+            self.bias = sess.run(bias_add.op.inputs[1])
 
         if isinstance(batch_norm, list):
             self.batch_normalize_moving_mean = sess.run(bn_sub.op.inputs[1])
