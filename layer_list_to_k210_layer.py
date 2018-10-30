@@ -266,7 +266,7 @@ class K210Act:
             yf_err = y_fix - yf_q
             xfy = x_fix - yf_err/dydx_fix
             return xfy, yf_q, dydx_fix
-            # return x_fix, y_fix, dydx_fix
+
         act_table = [(0x800000000, 0, 0)] + [act_table_aux(x,y,dydx) for x, y, dydx in act_table]
 
         def ret_aux(x, y, dydx):
@@ -336,7 +336,6 @@ class K210Layer:
         input_shape = self.conv.layer.tensor_conv_x.shape
         i_row_wid = int(input_shape[1])
         img_data_size = 1
-        img_line_size = 64 # todo remove
 
 
         coef_group = 1 if i_row_wid > 32 else (2 if i_row_wid > 16 else 4)
