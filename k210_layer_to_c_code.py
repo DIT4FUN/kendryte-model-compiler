@@ -192,7 +192,7 @@ def gen_bn_code(dlayer, idx):
                      '.norm_add = ' + str(bn['norm_add']) + ', ' +
                      '.norm_shift = ' + str(bn['norm_shift']) +
                      '}}') for bn in bn_list]
-    return 'cnn_batchnorm_argument_t bwsx_base_addr_' + str(
+    return 'kpu_batchnorm_argument_t bwsx_base_addr_' + str(
         idx) + '[] __attribute__((aligned(128))) = {\n' + ',\n'.join(bn_code_list) + '\n};'
 
 
@@ -213,7 +213,7 @@ def gen_act_code(dlayer, idx):
             ' .activate_para_bias1.data = {{\n  .result_bias = {{{},{},{},{},{},{},{},{}}}\n }}'
     ).format(*(bias_list[8:]))
 
-    return 'cnn_activate_table_t active_addr_' + str(idx) + ' __attribute__((aligned(128))) = {\n' + \
+    return 'kpu_activate_table_t active_addr_' + str(idx) + ' __attribute__((aligned(128))) = {\n' + \
            ',\n'.join([active_para, active_para_bias0, active_para_bias1]) + \
            '\n};'
 
@@ -233,9 +233,9 @@ def gen_weights_code(dlayer, idx, eight_bit_mode):
 def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit_mode):
     structs = gen_layer_list_struct(klayers)
 
-    header_part = '#include "cnn.h"'
+    header_part = '#include "kpu.h"'
     footer_part = '\n'.join([
-        'cnn_task_t* cnn_task_init(cnn_task_t* task){',
+        'kpu_task_t* kpu_task_init(kpu_task_t* task){',
         ' task->length = sizeof(la)/sizeof(la[0]);',
         ' \n'.join([
             ' la[{idx}].kernel_pool_type_cfg.data.bwsx_base_addr = (uint64_t)&bwsx_base_addr_{idx};\n'
@@ -250,7 +250,7 @@ def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit
         '}'
     ])
 
-    layer_part = 'cnn_layer_argument_t la[] __attribute__((aligned(128))) = {\n' + ',\n'.join([
+    layer_part = 'kpu_layer_argument_t la[] __attribute__((aligned(128))) = {\n' + ',\n'.join([
         gen_layer_code(layer, idx)
         for layer, idx in zip(structs, range(len(structs)))
     ]) + '};'
