@@ -51,7 +51,7 @@ class K210Conv:
         self.x_bias = None
         self.w_range = None
         self.w_bias = None
-        self.output_shape = self.layer.tensor_conv_y.shape
+        # self.output_shape = self.layer.tensor_conv_y.shape
 
     @staticmethod
     def q(value, scale, bias):
@@ -226,13 +226,30 @@ class K210Act:
         return y if y >= 0 else 10 * y
 
     @staticmethod
+    def relu6_inverse(y):
+        return y
+
+    @staticmethod
     def leaky_table(min_y, max_y):
         range_y = max_y - min_y
-        y_table = [min_y + i * range_y / 14 for i in range(14)]
-        y_table.append(0)
+        y_table = [min_y + i * range_y / 15 for i in range(15)]
         y_table.append(max_y)
+        if 0 not in y_table:
+            y_table.append(0)
         y_table = sorted(y_table)
         x_table = [K210Act.leaky_relu_inverse(it) for it in y_table]
+        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table) - 1)]
+        return zip(x_table, y_table, dydx)
+
+    @staticmethod
+    def relu6_table(min_y, max_y):
+        range_y = max_y - min_y
+        y_table = [min_y + i * range_y / 15 for i in range(15)]
+        y_table.append(max_y)
+        if 0 not in y_table:
+            y_table.append(0)
+        y_table = sorted(y_table)
+        x_table = [K210Act.relu6_inverse(it) for it in y_table]
         dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table) - 1)]
         return zip(x_table, y_table, dydx)
 
@@ -240,7 +257,8 @@ class K210Act:
     def linear_table(min_y, max_y):
         range_y = max_y - min_y
         y_table = [min_y + i * range_y / 14 for i in range(14)]
-        y_table.append(0)
+        if 0 not in y_table:
+            y_table.append(0)
         y_table.append(max_y)
         y_table = sorted(y_table)
         return zip(y_table, y_table, [1] * (len(y_table) - 1))
@@ -286,9 +304,12 @@ class K210Act:
         act_tab = None
         if self.name == 'leaky':
             act_tab = list(K210Act.leaky_table(self.min_y, self.max_y))[:16]
+        elif self.name == 'Relu6':
+            act_tab = list(K210Act.relu6_table(self.min_y, self.max_y))[:16]
         elif self.name == 'linear':
             act_tab = list(K210Act.linear_table(self.min_y, self.max_y))[:16]
         else:
+            print(self.name, ' active is not supported.')
             assert (None)
         return {'active_addr': K210Act.table_to_act(list(act_tab), self.min_y, self.max_y, self.eight_bit_mode)}
 
