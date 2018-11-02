@@ -11,16 +11,58 @@ import tensor_list_to_layer_list
 import layer_list_to_k210_layer
 import k210_layer_to_c_code
 
+def freeze_session(session, keep_var_names=None, output_names=None, clear_devices=True):
+    """
+    Freezes the state of a session into a pruned computation graph.
+
+    Creates a new computation graph where variable nodes are replaced by
+    constants taking their current value in the session. The new graph will be
+    pruned so subgraphs that are not necessary to compute the requested
+    outputs are removed.
+    @param session The TensorFlow session to be frozen.
+    @param keep_var_names A list of variable names that should not be frozen,
+                          or None to freeze all the variables in the graph.
+    @param output_names Names of the relevant graph outputs.
+    @param clear_devices Remove the device directives from the graph for better portability.
+    @return The frozen graph definition.
+    """
+    from tensorflow.python.framework.graph_util import convert_variables_to_constants
+    graph = session.graph
+    with graph.as_default():
+        freeze_var_names = list(set(v.op.name for v in tf.global_variables()).difference(keep_var_names or []))
+        output_names = output_names or []
+        output_names += [v.op.name for v in tf.global_variables()]
+        input_graph_def = graph.as_graph_def()
+        if clear_devices:
+            for node in input_graph_def.node:
+                node.device = ""
+        frozen_graph = convert_variables_to_constants(session, input_graph_def,
+                                                      output_names, freeze_var_names)
+        return frozen_graph
 
 def load_graph(pb_file_path, tensor_head_name):
     with tf.Session() as persisted_sess:
         print("load graph")
-        with gfile.FastGFile(pb_file_path, 'rb') as f:
-            graph_def = tf.GraphDef()
-            graph_def.ParseFromString(f.read())
-            persisted_sess.graph.as_default()
-            tf.import_graph_def(graph_def, name='')
+        if pb_file_path.endswith('h5'):
+            from keras import backend as K
+            from keras.models import load_model
+            from tensorflow.python.framework import graph_io
+            import tempfile
+            model = load_model(pb_file_path)
+            frozen_graph = freeze_session(K.get_session(),
+                                          output_names=[out.op.name for out in model.outputs])
+            pb_file_path = tempfile.mktemp()
+            *temp_dir, temp_name = pb_file_path.split('/')
+            temp_dir = '/'.join(temp_dir)
+            temp_name = temp_name + '.pb'
+            graph_io.write_graph(frozen_graph, temp_dir, temp_name, as_text=False)
 
+        if pb_file_path.endswith('pb'):
+            with gfile.FastGFile(pb_file_path, 'rb') as f:
+                graph_def = tf.GraphDef()
+                graph_def.ParseFromString(f.read())
+                persisted_sess.graph.as_default()
+                tf.import_graph_def(graph_def, name='')
 
         writer = tf.summary.FileWriter("./graphs", persisted_sess.graph)
         writer.close()
