@@ -1,5 +1,6 @@
 import argparse
-
+import os
+import tempfile
 import tensorflow as tf
 import numpy as np
 from PIL import Image
@@ -11,9 +12,9 @@ import tensor_list_to_layer_list
 import layer_list_to_k210_layer
 import k210_layer_to_c_code
 
+current_dir = os.path.dirname(os.path.realpath(__file__))
 
 def load_graph(pb_file_path, tensor_head_name):
-    print("load graph")
     if pb_file_path.endswith('h5'):
         import h5_converter
         pb_file_path = h5_converter.convert(pb_file_path)
@@ -26,10 +27,11 @@ def load_graph(pb_file_path, tensor_head_name):
                 persisted_sess.graph.as_default()
                 tf.import_graph_def(graph_def, name='')
 
-        writer = tf.summary.FileWriter("./graphs", persisted_sess.graph)
-        writer.close()
 
-        return persisted_sess.graph._nodes_by_name[tensor_head_name].outputs[0]
+        if tensor_head_name is not None:
+            return persisted_sess.graph._nodes_by_name[tensor_head_name].outputs[0]
+        else:
+            return None
 
     return None
 
@@ -70,6 +72,7 @@ def convert(tensor_head, dataset_pack, eight_bit_mode=False):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--tensorboard_mode', type=bool, default=True)
     parser.add_argument('--pb_path', type=str, default='pb_files/graph_yv2_DW.pb')
     parser.add_argument('--tensor_head_name', default='yv2')
     parser.add_argument('--dataset_input_name', default='input:0')
@@ -80,6 +83,7 @@ def main():
     parser.add_argument('--output_path', default='build/gencode_output.c')
     args = parser.parse_args()
 
+    tensorboard_mode = args.tensorboard_mode
     pb_path = args.pb_path
     tensor_head_name = args.tensor_head_name
     dataset_input_name = args.dataset_input_name
@@ -88,6 +92,18 @@ def main():
     image_h = args.image_h
     eight_bit_mode = args.eight_bit_mode
     output_path = args.output_path
+
+    if ':' not in dataset_input_name:
+        dataset_input_name = dataset_input_name + ':0'
+
+    if tensorboard_mode:
+        load_graph(pb_path, None)
+        graphs_path = tempfile.mkdtemp('graphs')
+        writer = tf.summary.FileWriter(graphs_path, tf.Session().graph)
+        writer.close()
+        import subprocess
+        subprocess.call(['tensorboard', '--logdir', graphs_path])
+        return
 
 
     tensor_head = load_graph(pb_path, tensor_head_name)
