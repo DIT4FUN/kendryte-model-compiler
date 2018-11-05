@@ -226,6 +226,10 @@ class K210Act:
         return y if y >= 0 else 10 * y
 
     @staticmethod
+    def relu_inverse(y):
+        return y
+
+    @staticmethod
     def relu6_inverse(y):
         return y
 
@@ -238,6 +242,18 @@ class K210Act:
             y_table.append(0)
         y_table = sorted(y_table)
         x_table = [K210Act.leaky_relu_inverse(it) for it in y_table]
+        dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table) - 1)]
+        return zip(x_table, y_table, dydx)
+
+    @staticmethod
+    def relu_table(min_y, max_y):
+        range_y = max_y - min_y
+        y_table = [min_y + i * range_y / 15 for i in range(15)]
+        y_table.append(max_y)
+        if 0 not in y_table:
+            y_table.append(0)
+        y_table = sorted(y_table)
+        x_table = [K210Act.relu_inverse(it) for it in y_table]
         dydx = [(y_table[i + 1] - y_table[i]) / (x_table[i + 1] - x_table[i]) for i in range(len(y_table) - 1)]
         return zip(x_table, y_table, dydx)
 
@@ -304,6 +320,8 @@ class K210Act:
         act_tab = None
         if self.name == 'leaky':
             act_tab = list(K210Act.leaky_table(self.min_y, self.max_y))[:16]
+        elif self.name == 'Relu':
+            act_tab = list(K210Act.relu_table(self.min_y, self.max_y))[:16]
         elif self.name == 'Relu6':
             act_tab = list(K210Act.relu6_table(self.min_y, self.max_y))[:16]
         elif self.name == 'linear':
