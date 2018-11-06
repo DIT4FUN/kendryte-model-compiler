@@ -116,10 +116,15 @@ def main():
 
 
     tensor_head = load_graph(pb_path, tensor_head_name)
-    dataset = np.array([box_image(path, image_w, image_h)[0].tolist() for path in
-                        # ('pic/001.jpg', 'pic/002.jpg', 'pic/003.jpg', 'pic/004.jpg', 'pic/005.jpg', 'pic/006.jpg')
-                        (dataset_pic_path, )
-                        ])
+    if os.path.isdir(dataset_pic_path):
+        import random
+        all_files = os.listdir(dataset_pic_path)
+        all_files = random.choice(all_files)[:128] # set maxmum dataset size
+        dataset_file_list = [f for f in all_files if os.path.isfile(os.path.relpath(f, dataset_pic_path))]
+    else:
+        dataset_file_list = (dataset_pic_path, )
+
+    dataset = np.array([box_image(path, image_w, image_h)[0].tolist() for path in dataset_file_list])
 
     code = convert(tensor_head, {dataset_input_name: dataset}, eight_bit_mode)
 
