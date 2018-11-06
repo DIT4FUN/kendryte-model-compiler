@@ -70,16 +70,25 @@ def convert(tensor_head, dataset_pack, eight_bit_mode=False):
         return code
 
 
+
 def main():
+    def str2bool(v):
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--tensorboard_mode', type=bool, default=True)
-    parser.add_argument('--pb_path', type=str, default='pb_files/graph_yv2_DW.pb')
-    parser.add_argument('--tensor_head_name', default='yv2')
+    parser.add_argument('--tensorboard_mode', type=str2bool, nargs='?', const=True, default=False)
+    parser.add_argument('--pb_path', type=str, default='<please set --pb_path>')
+    parser.add_argument('--tensor_head_name', default='<tensor head>')
     parser.add_argument('--dataset_input_name', default='input:0')
     parser.add_argument('--dataset_pic_path', default='pic/dog.bmp')
     parser.add_argument('--image_w', type=int, default=320)
     parser.add_argument('--image_h', type=int, default=240)
-    parser.add_argument('--eight_bit_mode', type=bool, default=False)
+    parser.add_argument('--eight_bit_mode', type=str2bool, nargs='?', const=True, default=False)
     parser.add_argument('--output_path', default='build/gencode_output.c')
     args = parser.parse_args()
 
@@ -117,4 +126,5 @@ def main():
     with open(output_path, 'w') as of:
             of.write(code)
 
-main()
+if __name__ == '__main__':
+    main()
