@@ -65,7 +65,8 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         mino = ordered_o[0]
         maxo = ordered_o[-1]
 
-    print("[layer {}]".format(idx), tensor_out.op.name, 'scale/bias:', *min_max_to_scale_bias(mino, maxo))
+    output_scale, output_bias = min_max_to_scale_bias(mino, maxo)
+    print("[layer {}]".format(idx), tensor_out.op.name, 'scale/bias:', output_scale, output_bias)
 
 
     img_input_size = int(math.ceil(io_arg['i_ch_num'] / conv_arg['coef_group']) * 64 * conv_arg['channel_switch_addr'])
@@ -143,7 +144,6 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         'dma_total_byte': io_arg['dma_total_byte'] - 1,
     }
 
-    pass
     return {
         'interrupt_enabe': interrupt_enabe,
         'image_addr': image_addr,
@@ -157,7 +157,7 @@ def gen_layer_struct(klayer: layer_list_to_k210_layer.K210Layer, idx: int):
         'conv_value': conv_value,
         'conv_value2': conv_value2,
         'dma_parameter': dma_parameter
-    }
+    }, (output_scale, output_bias)
 
 
 def gen_layer_list_struct(klayers: [layer_list_to_k210_layer.K210Layer]):
@@ -180,13 +180,13 @@ def gen_layer_code(dlayer, idx):
                     )
                     for k, v in data.items()
                 ]) + '\n }'
-                for reg_name, data in dlayer.items()
+                for reg_name, data in dlayer[0].items()
             ]) +
             '\n}')
 
 
 def gen_bn_code(dlayer, idx):
-    bn_list = dlayer['kernel_pool_type_cfg']['bwsx_base_addr']
+    bn_list = dlayer[0]['kernel_pool_type_cfg']['bwsx_base_addr']
     bn_code_list = [(' {.batchnorm.data = {' +
                      '.norm_mul = ' + str(bn['norm_mul']) + ', ' +
                      '.norm_add = ' + str(bn['norm_add']) + ', ' +
@@ -197,7 +197,7 @@ def gen_bn_code(dlayer, idx):
 
 
 def gen_act_code(dlayer, idx):
-    act_list = dlayer['kernel_calc_type_cfg']['active_addr']
+    act_list = dlayer[0]['kernel_calc_type_cfg']['active_addr']
     active_para = ' .activate_para = {\n' + ',\n'.join([
         '  {{.data = {{.shift_number={dxs}, .y_mul={dy}, .x_start={x} }}}}'.format(
             dxs=item['dxs'], dy=int(item['dy']), x=signed_to_hex(item['x'], 36)
@@ -219,7 +219,7 @@ def gen_act_code(dlayer, idx):
 
 
 def gen_weights_code(dlayer, idx, eight_bit_mode):
-    weights = dlayer['kernel_load_cfg']['para_start_addr']
+    weights = dlayer[0]['kernel_load_cfg']['para_start_addr']
     weights_data = ', '.join([
         ('\n' if i % 64 == 0 else '') +
         signed_to_hex(item, 8 if eight_bit_mode else 16)
@@ -232,6 +232,7 @@ def gen_weights_code(dlayer, idx, eight_bit_mode):
 
 def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit_mode):
     structs = gen_layer_list_struct(klayers)
+    output_scale, output_bias = structs[-1][1]
 
     header_part = '#include "kpu.h"'
     footer_part = '\n'.join([
@@ -246,6 +247,8 @@ def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit
         ' task->layers = la;',
         ' task->layers_length = sizeof(la)/sizeof(la[0]);',
         ' task->eight_bit_mode = {};'.format(str(1 if eight_bit_mode else 0)),
+        ' task->output_scale = {};'.format(output_scale),
+        ' task->output_bias = {};'.format(output_bias),
         ' return task;',
         '}'
     ])
