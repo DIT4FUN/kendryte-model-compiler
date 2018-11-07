@@ -321,17 +321,17 @@ class K210Act:
         self.collection()
         act_tab = None
         if self.name == 'leaky':
-            act_tab = list(K210Act.leaky_table(self.min_y, self.max_y))[:16]
+            act_tab = list(K210Act.leaky_table(self.min_y, self.max_y))
         elif self.name == 'Relu':
-            act_tab = list(K210Act.relu_table(self.min_y, self.max_y))[:16]
+            act_tab = list(K210Act.relu_table(self.min_y, self.max_y))
         elif self.name == 'Relu6':
-            act_tab = list(K210Act.relu6_table(self.min_y, self.max_y))[:16]
+            act_tab = list(K210Act.relu6_table(self.min_y, self.max_y))
         elif self.name == 'linear':
-            act_tab = list(K210Act.linear_table(self.min_y, self.max_y))[:16]
+            act_tab = list(K210Act.linear_table(self.min_y, self.max_y))
         else:
             print(self.name, ' active is not supported.')
             assert (None)
-        return {'active_addr': K210Act.table_to_act(list(act_tab), self.min_y, self.max_y, self.eight_bit_mode)}
+        return {'active_addr': K210Act.table_to_act(list(act_tab), self.min_y, self.max_y, self.eight_bit_mode)[:16]}
 
 
 class K210Pool:

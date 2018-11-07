@@ -132,7 +132,7 @@ def main():
 
     code = convert(tensor_head, {dataset_input_name: dataset}, eight_bit_mode)
 
-    os.mkdir(os.path.dirname(output_path))
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as of:
             of.write(code)
 
