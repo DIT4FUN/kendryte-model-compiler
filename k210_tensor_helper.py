@@ -1,10 +1,10 @@
 import tensorflow as tf
 
-def k210_sub_layer_conv(prev, weights, strides, padding):
+def k210_sub_layer_conv(prev, weights, strides):
     return tf.nn.conv2d(
         prev, weights,
         strides=[1, strides, strides, 1],
-        padding=padding
+        padding='SAME'
     )
 
 

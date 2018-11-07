@@ -3,7 +3,6 @@ import os
 import tempfile
 import tensorflow as tf
 import numpy as np
-from PIL import Image
 
 from tensorflow.python.platform import gfile
 
@@ -36,6 +35,7 @@ def load_graph(pb_file_path, tensor_head_name):
     return None
 
 def box_image(im_path, new_w, new_h):
+    from PIL import Image
     orig = Image.open(im_path)
     w, h = orig.size
     w_scale = float(new_w) / w

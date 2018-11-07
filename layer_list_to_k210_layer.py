@@ -51,7 +51,9 @@ class K210Conv:
         self.x_bias = None
         self.w_range = None
         self.w_bias = None
-        # self.output_shape = self.layer.tensor_conv_y.shape
+
+        if self.layer.tensor_conv_x.shape[1:2] != self.layer.tensor_conv_y.shape[1:2]:
+            raise ValueError('conv2d should use padding=SAME')
 
     @staticmethod
     def q(value, scale, bias):

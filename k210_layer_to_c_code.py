@@ -236,7 +236,6 @@ def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit
     header_part = '#include "kpu.h"'
     footer_part = '\n'.join([
         'kpu_task_t* kpu_task_init(kpu_task_t* task){',
-        ' task->length = sizeof(la)/sizeof(la[0]);',
         ' \n'.join([
             ' la[{idx}].kernel_pool_type_cfg.data.bwsx_base_addr = (uint64_t)&bwsx_base_addr_{idx};\n'
             ' la[{idx}].kernel_calc_type_cfg.data.active_addr = (uint64_t)&active_addr_{idx};\n'
@@ -245,6 +244,7 @@ def gen_layer_list_code(klayers: [layer_list_to_k210_layer.K210Layer], eight_bit
             for idx in range(len(structs))
         ]),
         ' task->layers = la;',
+        ' task->layers_length = sizeof(la)/sizeof(la[0]);',
         ' task->eight_bit_mode = {};'.format(str(1 if eight_bit_mode else 0)),
         ' return task;',
         '}'

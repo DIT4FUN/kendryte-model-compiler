@@ -1,15 +1,16 @@
 
 ## Dependent
-you need python3 and tensorflow.
+you need `python3` `tensorflow` and `pillow`.
 ```sh
 pip3 install tensorflow
+pip3 install pillow
 ```
 
 ## Convert
-convert .pb file to k210
+convert `.pb` file to k210
 ```sh
 git clone https://git.b-bug.org/maix/model-compiler.git
-python3 model-compiler --pb_path <your pb file> --tesorboard-mode
+python3 model-compiler --pb_path <your pb file> --tensorboard-mode
 ```
 check your inout tensor name and your output tensor name,
 check your input dataset image width and height.
@@ -26,4 +27,4 @@ show more help
 using 8bit mode or 16bit mode
 
 ###--tesorboard-mode
-run tensorboard for current .pb file
+run tensorboard for current `.pb` file
