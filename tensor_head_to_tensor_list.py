@@ -74,6 +74,9 @@ class PbConverter:
         elif self.ty_match(['Maximum', ('Mul', 1), 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0, 0)])
             return True
+        elif self.ty_match(['Maximum', ('Mul', 1), 'FusedBatchNorm', 'Conv2D']):
+            self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0)])
+            return True
         elif self.ty_match(['Maximum', ('Mul', 1), 'Add', 'Mul', 'RealDiv', 'Sub', 'Conv2D']):
             self.dst.append(['convolutional', *self.pop_src(0, 1, 0, 0, 0, 0, 0)])
             return True
@@ -122,7 +125,7 @@ class PbConverter:
             return False
 
     def try_input(self):
-        if self.output_tensor == self.input_tensor:
+        if self.output_tensor is not None and self.output_tensor == self.input_tensor:
             net = self.output_tensor
             self.dst.append(['net', net])
             self.output_tensor = None

@@ -27,7 +27,7 @@ def load_graph(pb_file_path, tensor_output_name, tensor_input_name):
                 persisted_sess.graph.as_default()
                 tf.import_graph_def(graph_def, name='')
 
-
+        output_tensor, input_tensor = None, None
         if tensor_output_name is not None:
             output_tensor = persisted_sess.graph._nodes_by_name[tensor_output_name].outputs[0]
         if tensor_input_name is not None:

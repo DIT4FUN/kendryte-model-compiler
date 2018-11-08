@@ -67,6 +67,9 @@ class LayerConvolutional(LayerBase):
         elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
             leaky_reul_max, leaky_reul_mul, batch_norm, bias_add, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
+        elif self.type_match(info, ['Maximum', 'Mul', 'FusedBatchNorm', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, batch_norm, conv2d = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Mul', 'RealDiv', 'Sub', 'Conv2D']):
             leaky_reul_max, leaky_reul_mul, bn_add, bn_mul, bn_div, bn_sub, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
@@ -116,13 +119,18 @@ class LayerConvolutional(LayerBase):
             self.batch_normalize_gamma = sess.run(bn_mul.op.inputs[1])
             self.batch_normalize_beta = sess.run(bn_add.op.inputs[1])
         elif batch_norm is not None:
-            assert ('gamma/read' in batch_norm.op.inputs[1].name)
-            assert ('beta/read' in batch_norm.op.inputs[2].name)
+            if 'gamma/read' not in batch_norm.op.inputs[1].name:
+                print('[warning] gamma/read should in name:', batch_norm.op.inputs[1].name)
+            if 'beta/read' not in batch_norm.op.inputs[2].name:
+                print('[warning] beta/read should in name:', batch_norm.op.inputs[1].name)
+
             self.batch_normalize_gamma = sess.run(batch_norm.op.inputs[1])
             self.batch_normalize_beta = sess.run(batch_norm.op.inputs[2])
             if len(batch_norm.op.inputs) == 5:
-                assert ('moving_mean/read' in batch_norm.op.inputs[3].name)
-                assert ('moving_variance/read' in batch_norm.op.inputs[4].name)
+                if 'gamma/read' not in batch_norm.op.inputs[1].name:
+                    print('[warning] moving_mean/read should in name:', batch_norm.op.inputs[3].name)
+                if 'beta/read' not in batch_norm.op.inputs[2].name:
+                    print('[warning] moving_variance/read should in name:', batch_norm.op.inputs[4].name)
                 self.batch_normalize_moving_mean = sess.run(batch_norm.op.inputs[3])
                 self.batch_normalize_moving_variance = sess.run(batch_norm.op.inputs[4])
             else:
@@ -139,6 +147,10 @@ class LayerConvolutional(LayerBase):
                 self.batch_normalize_moving_mean = sess.run(mean_tensor)
                 self.batch_normalize_moving_variance = sess.run(variance_tensor)
 
+            if self.batch_normalize_moving_mean.size == 0:
+                self.batch_normalize_moving_mean = 0
+            if self.batch_normalize_moving_variance.size == 0:
+                self.batch_normalize_moving_variance = 1
 
 class LayerDepthwiseConvolutional(LayerBase):
     def __init__(self, sess, info):
