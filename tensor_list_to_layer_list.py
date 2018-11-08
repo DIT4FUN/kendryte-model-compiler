@@ -57,6 +57,9 @@ class LayerConvolutional(LayerBase):
         elif self.type_match(info, ['Maximum', 'Mul', 'BiasAdd', 'Conv2D']):
             leaky_reul_max, leaky_reul_mul, bias_add, conv2d = info
             activation = ['leaky', leaky_reul_max, leaky_reul_mul]
+        elif self.type_match(info, ['Maximum', 'Mul', 'Add', 'Conv2D']):
+            leaky_reul_max, leaky_reul_mul, bias_add, conv2d = info
+            activation = ['leaky', leaky_reul_max, leaky_reul_mul]
         elif self.type_match(info, ['Relu6', 'BiasAdd', 'Conv2D']):
             activation, bias_add, conv2d = info
         elif self.type_match(info, ['Relu', 'FusedBatchNorm', 'BiasAdd', 'Conv2D']):
