@@ -1,6 +1,7 @@
 import argparse
 import os
 import tempfile
+
 import tensorflow as tf
 import numpy as np
 
@@ -13,7 +14,7 @@ import k210_layer_to_c_code
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
-def load_graph(pb_file_path, tensor_head_name):
+def load_graph(pb_file_path, tensor_output_name, tensor_input_name):
     if pb_file_path.endswith('h5'):
         import h5_converter
         pb_file_path = h5_converter.convert(pb_file_path)
@@ -27,10 +28,12 @@ def load_graph(pb_file_path, tensor_head_name):
                 tf.import_graph_def(graph_def, name='')
 
 
-        if tensor_head_name is not None:
-            return persisted_sess.graph._nodes_by_name[tensor_head_name].outputs[0]
-        else:
-            return None
+        if tensor_output_name is not None:
+            output_tensor = persisted_sess.graph._nodes_by_name[tensor_output_name].outputs[0]
+        if tensor_input_name is not None:
+            input_tensor = persisted_sess.graph._nodes_by_name[tensor_input_name].outputs[0]
+
+        return output_tensor, input_tensor
 
     return None
 
@@ -59,9 +62,9 @@ def box_image(im_path, new_w, new_h):
 
     return box_im, resized
 
-def convert(tensor_head, dataset_pack, eight_bit_mode=False):
+def convert(tensor_output, tensor_input, dataset_pack, eight_bit_mode=False):
     with tf.Session() as sess:
-        converter = tensor_head_to_tensor_list.PbConverter(tensor_head)
+        converter = tensor_head_to_tensor_list.PbConverter(tensor_output, tensor_input)
         converter.convert()
         layers = tensor_list_to_layer_list.convert_to_layers(sess, converter.dst)
         k210_layers = layer_list_to_k210_layer.gen_k210_layers(layers, sess, dataset_pack, eight_bit_mode)
@@ -83,18 +86,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--tensorboard_mode', type=str2bool, nargs='?', const=True, default=False)
     parser.add_argument('--pb_path', type=str, default='<please set --pb_path>')
-    parser.add_argument('--tensor_head_name', default='<tensor head>')
+    parser.add_argument('--tensor_output_name', default=None)
+    parser.add_argument('--tensor_input_name', default=None)
     parser.add_argument('--dataset_input_name', default='input:0')
-    parser.add_argument('--dataset_pic_path', default='pic/dog.bmp')
+    parser.add_argument('--dataset_pic_path', default='pic/yolo')
     parser.add_argument('--image_w', type=int, default=320)
     parser.add_argument('--image_h', type=int, default=240)
     parser.add_argument('--eight_bit_mode', type=str2bool, nargs='?', const=True, default=False)
     parser.add_argument('--output_path', default='build/gencode_output.c')
+
+    # Deprecated
+    parser.add_argument('--tensor_head_name', default=None)
+
     args = parser.parse_args()
+
+    if args.tensor_head_name is not None:
+        print(
+            '[warning]: --tensor_head_name is deprecated. please use --tensor_output_name instand'
+        )
 
     tensorboard_mode = args.tensorboard_mode
     pb_path = args.pb_path
-    tensor_head_name = args.tensor_head_name
+    tensor_output_name = args.tensor_output_name or args.tensor_head_name
+    tensor_input_name = args.tensor_input_name
     dataset_input_name = args.dataset_input_name
     dataset_pic_path = args.dataset_pic_path
     image_w = args.image_w
@@ -106,7 +120,7 @@ def main():
         dataset_input_name = dataset_input_name + ':0'
 
     if tensorboard_mode:
-        load_graph(pb_path, None)
+        load_graph(pb_path, None, None)
         graphs_path = tempfile.mkdtemp('graphs')
         writer = tf.summary.FileWriter(graphs_path, tf.Session().graph)
         writer.close()
@@ -115,7 +129,7 @@ def main():
         return
 
 
-    tensor_head = load_graph(pb_path, tensor_head_name)
+    tensor_output, tensor_input = load_graph(pb_path, tensor_output_name, tensor_input_name)
     if os.path.isdir(dataset_pic_path):
         import random
         all_files = os.listdir(dataset_pic_path)
@@ -130,7 +144,7 @@ def main():
 
     dataset = np.array([box_image(path, image_w, image_h)[0].tolist() for path in dataset_file_list])
 
-    code = convert(tensor_head, {dataset_input_name: dataset}, eight_bit_mode)
+    code = convert(tensor_output, tensor_input, {dataset_input_name: dataset}, eight_bit_mode)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as of:
