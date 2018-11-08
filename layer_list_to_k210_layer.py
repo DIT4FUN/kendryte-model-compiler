@@ -342,6 +342,9 @@ class K210Pool:
         self.tensor = layer.tensor_pool
         self.sess = sess
         self.dataset = dataset
+        if self.size == 2 and self.tensor.op.inputs[0].shape[3] % 2 != 0:
+            if self.tensor.op.get_attr('padding') == b'SAME':
+                raise ValueError("at {} unsupport padding mode SAME of pooling with size == 2".format(self.tensor.name))
 
     def to_k210(self):
         if self.name == 'maxpool':
