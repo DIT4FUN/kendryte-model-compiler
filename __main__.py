@@ -62,12 +62,17 @@ def box_image(im_path, new_w, new_h):
 
     return box_im, resized
 
-def convert(tensor_output, tensor_input, dataset_pack, eight_bit_mode=False):
+def convert(tensor_output, tensor_input, dataset_pack, eight_bit_mode=False, input_min=0, input_max=1):
     with tf.Session() as sess:
         converter = tensor_head_to_tensor_list.PbConverter(tensor_output, tensor_input)
         converter.convert()
         layers = tensor_list_to_layer_list.convert_to_layers(sess, converter.dst)
-        k210_layers = layer_list_to_k210_layer.gen_k210_layers(layers, sess, dataset_pack, eight_bit_mode)
+        k210_layers = layer_list_to_k210_layer.gen_k210_layers(
+            layers, sess, dataset_pack,
+            eight_bit_mode=eight_bit_mode,
+            input_min=input_min,
+            input_max=input_max
+        )
 
         code = k210_layer_to_c_code.gen_layer_list_code(k210_layers, eight_bit_mode)
         return code
@@ -86,8 +91,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--tensorboard_mode', type=str2bool, nargs='?', const=True, default=False)
     parser.add_argument('--pb_path', type=str, default='<please set --pb_path>')
-    parser.add_argument('--tensor_output_name', default=None)
     parser.add_argument('--tensor_input_name', default=None)
+    parser.add_argument('--tensor_output_name', default=None)
+    parser.add_argument('--tensor_input_min', type=float, default=0)
+    parser.add_argument('--tensor_input_max', type=float, default=1)
     parser.add_argument('--dataset_input_name', default='input:0')
     parser.add_argument('--dataset_pic_path', default='pic/yolo')
     parser.add_argument('--image_w', type=int, default=320)
@@ -107,8 +114,10 @@ def main():
 
     tensorboard_mode = args.tensorboard_mode
     pb_path = args.pb_path
-    tensor_output_name = args.tensor_output_name or args.tensor_head_name
     tensor_input_name = args.tensor_input_name
+    tensor_output_name = args.tensor_output_name or args.tensor_head_name
+    input_min = args.tensor_input_min
+    input_max = args.tensor_input_max
     dataset_input_name = args.dataset_input_name
     dataset_pic_path = args.dataset_pic_path
     image_w = args.image_w
@@ -144,7 +153,13 @@ def main():
 
     dataset = np.array([box_image(path, image_w, image_h)[0].tolist() for path in dataset_file_list])
 
-    code = convert(tensor_output, tensor_input, {dataset_input_name: dataset}, eight_bit_mode)
+    code = convert(
+        tensor_output, tensor_input,
+        {dataset_input_name: dataset},
+        eight_bit_mode=eight_bit_mode,
+        input_min=input_min,
+        input_max=input_max
+    )
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as of:

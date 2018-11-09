@@ -404,7 +404,7 @@ class K210Layer:
         return locals()
 
 
-def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset, eight_bit_mode = False):
+def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset, eight_bit_mode = False, input_min=0, input_max=1):
     buffer = list(layers)
     buffer.reverse()
     ret = []
@@ -421,8 +421,8 @@ def gen_k210_layers(layers: [tensor_list_to_layer_list.LayerBase], sess, dataset
             last_min = last_act.min_y
             last_max = last_act.max_y
         else:
-            last_min = 0
-            last_max = 1
+            last_min = input_min
+            last_max = input_max
 
         if isinstance(buffer[-1], tensor_list_to_layer_list.LayerConvolutional) \
                 or isinstance(buffer[-1], tensor_list_to_layer_list.LayerDepthwiseConvolutional):
