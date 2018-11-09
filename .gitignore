@@ -5,6 +5,5 @@ __pycache__
 *.graph
 mid_data
 build
-pb_files/
-~pb_files/20classes_yolo.pb
-
+pb_files/*
+!pb_files/20classes_yolo.pb
