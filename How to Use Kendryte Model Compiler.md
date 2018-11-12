@@ -191,9 +191,9 @@ $ make
 
 You will get ```kpu.bin``` in ```kendryte-standalone-sdk/build```. 
 
-Download ```kpu.bin``` to [KD233](shop302377334.taobao.com) with [K-Flash](kendryte.com/downloads/). Hoory! The *demo* is running!!
+Download ```kpu.bin``` to [KD233](https://shop302377334.taobao.com) with [K-Flash](https://kendryte.com/downloads/). Hoory! The *demo* is running!!
 
-**Tips**: please refer to official [website](kendryte.com/downloads/) , [forum](forum.kendryte.com) and [GIT](github.com/kendryte) to get development resources for kendryte K210.
+**Tips**: please refer to official [website](https://kendryte.com/downloads/) , [forum](https://forum.kendryte.com) and [GIT](https://github.com/kendryte) to get development resources for kendryte K210.
 
 
 
